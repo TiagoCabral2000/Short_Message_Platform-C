@@ -18,8 +18,8 @@ typedef struct{
 } login;
 
 typedef struct{
-   char username[20];
    char msg[50];
+   int result;
 } login_feedback;
 
 int main(int argc, char *argv[]){
@@ -64,14 +64,23 @@ int main(int argc, char *argv[]){
    int size = read(fd_recebe_registo, &feedback_registo, sizeof(feedback_registo));
    if (size > 0) {
       printf("%s", feedback_registo.msg);
+      if(feedback_registo.result == 0){
+         close(fd_recebe_registo); 
+         close(fd_registo);  
+         unlink(CLIENT_FIFO_FINAL);
+         return 0;
+      }
    } 
    else {
       printf("Erro ao ler a resposta do servidor\n");
    }
+
+
+
+   
    close(fd_recebe_registo); 
    close(fd_registo);  
    unlink(CLIENT_FIFO_FINAL);  
    return 0;
-
-
 }
+

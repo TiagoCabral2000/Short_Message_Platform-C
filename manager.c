@@ -18,8 +18,8 @@ typedef struct{
 } login;
 
 typedef struct{
-   char username[20];
    char msg[50];
+   int result;
 } login_feedback;
 
 
@@ -57,8 +57,7 @@ int main(){
          if (fd_login == -1) {
             printf("Erro ao abrir FIFO do cliente para escrita\n");
             return 1;
-         }
-         
+         }     
 
          int username_exists = 0;
          int free_slot = -1;
@@ -73,15 +72,18 @@ int main(){
 
          if (username_exists == 1) {
             strcpy(devolve_registo.msg, "Username já existe!\n");
+            devolve_registo.result = 0;
          } 
          else if (free_slot == -1) {
             strcpy(devolve_registo.msg, "Capacidade máxima de utilizadores atingida!\n");
+            devolve_registo.result = 0;
          } 
          else {
             strcpy(devolve_registo.msg, "Usuário adicionado com sucesso\n");
             strcpy(usernames[free_slot], registo.username);
+            devolve_registo.result = 1;
          }
-         strcpy(devolve_registo.username, registo.username);
+         
          write(fd_login, &devolve_registo, sizeof(devolve_registo));
          close(fd_login);
       }
