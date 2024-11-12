@@ -7,11 +7,9 @@ Platform for sending and receiving short messages, organized by topics
 - Feed: username indicated in the feed command line (./feed username)
 - Manager: maximum registration of 10 users. Repeated usernames are not accepted. Returns feedback to the user on the success of their registration
 
-### Topic creation
-Any user can send messages to a specific topic. If the topic doesn’t exist and the server’s maximum topic limit hasn’t been reached, the topic will be automatically created, allowing users to subscribe to it afterward. Topics are identified by their name (e.g., “football,” “technology,” “movies,” etc.), and it’s assumed that each topic name is a single word
-
 ### Message sending
-Whenever a user sends a message (using their feed) to a topic, the message will be delivered and immediately displayed to all online users who have subscribed to that topic
+Whenever a user sends a message (using their feed) to a topic, the message will be delivered and immediately displayed to all online users who have subscribed to that topic <br />
+Any user can send messages to a specific topic. If the topic doesn’t exist and the server’s maximum topic limit hasn’t been reached, the topic will be automatically created, allowing users to subscribe to it afterward. Topics are identified by their name (e.g., “football,” “technology,” “movies,” etc.), and it’s assumed that each topic name is a single word
 
 ### Types of message
 There are two types of messages: non-persistent and persistent. <br />
@@ -23,3 +21,13 @@ Upon startup, the manager loads any persistent messages still within their lifet
 There are two user types:
 - Client: Participates on the platform through written commands, sending messages and subscribing to topics via a text-based interface in a dedicated terminal. Clients cannot directly interact with each other.
 - Administrator: Controls and launches the manager, interacting with the platform via commands through the manager’s standard input. This administrator is unrelated to the OS root user.
+
+### Message Management and Storage
+
+- Limits: Up to 10 users, 20 topics, and 5 persistent messages per topic.
+- Message Format: Contains topic name (max 20 characters, single word), message body (up to 300 characters), and additional info as needed.
+- Storage: Messages are stored temporarily in memory following these limits.
+Persistent messages with remaining time are saved to a text file when the manager closes, reloaded on restart.
+- File Format: Each line has <topic_name> <author_username> <remaining_lifetime> <message_body>.
+- Transmission: Message body can be up to 300 characters; efficient solutions only send the actual text used.
+- Manager Time Control: Persistent messages expire after their specified lifetime and are automatically removed by the manager
