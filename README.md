@@ -1,5 +1,6 @@
 # TP_SO_2425
 Platform for sending and receiving short messages, organized by topics
+<br />
 
 ## Features
 
@@ -59,3 +60,12 @@ Persistent messages with remaining time are saved to a text file when the manage
 - unlock <topic> -> Re-enables sending messages to the specified topic.
 
 - close -> Shuts down the platform and terminates the manager, notifying all feed processes to close and releasing system resources.
+
+<br />
+## TO-DO
+- 10 user limit array
+- feed cycle to ask for new messages (manager named pipe - write) - after i need to wait for 'msg' keyword
+- manager cycle to receive new messages (manager named pipe - read)
+- save topics and user pid's: -bidimensional array for topics and users?
+- resend message to users registred in topic (multiple named pipes - server to multiple clients) - maybe just regist all client pid's in one array and send it for all first
+- ...
