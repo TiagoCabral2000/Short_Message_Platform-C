@@ -3,7 +3,7 @@ Platform for sending and receiving short messages, organized by topics
 
 ## Features
 
-### User registration on the platform ✅
+### User registration on the platform 
 - Feed: username indicated in the feed command line (./feed username)
 - Manager: maximum registration of 10 users. Repeated usernames are not accepted. Returns feedback to the user on the success of their registration
 
@@ -43,3 +43,19 @@ Persistent messages with remaining time are saved to a text file when the manage
 - unsubscribe <topic>  -> Stops receiving messages for this topic. If no persistent messages remain and no users are subscribed, the topic is removed entirely.
 
 - exit -> Closes the feed process.
+
+### Manager Commands
+
+users -> Lists all users currently on the platform.
+
+remove <username> -> Removes a user from the platform, automatically ending their feed process. Other users are notified of this user’s removal.
+
+topics -> Lists all topics, showing their name and the number of persistent messages.
+
+show <topic> -> Displays all persistent messages in the specified topic.
+
+lock <topic> -> Prevents new messages from being sent to the specified topic. Persistent messages remain until expiration, and users can still subscribe to it.
+
+unlock <topic> -> Re-enables sending messages to the specified topic.
+
+close -> Shuts down the platform and terminates the manager, notifying all feed processes to close and releasing system resources.
