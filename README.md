@@ -61,7 +61,7 @@ Persistent messages with remaining time are saved to a text file when the manage
 
 - close -> Shuts down the platform and terminates the manager, notifying all feed processes to close and releasing system resources.
 
-<br />
+
 ## TO-DO
 - 10 user limit array
 - feed cycle to ask for new messages (manager named pipe - write) - after i need to wait for 'msg' keyword
