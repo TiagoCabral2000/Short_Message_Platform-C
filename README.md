@@ -18,3 +18,8 @@ There are two types of messages: non-persistent and persistent. <br />
 Non-persistent messages are not stored; once the manager receives them, they are distributed to users interested in the topic and then discarded. <br />
 Persistent messages are also distributed to interested users but are stored by the manager for a certain period (referred to as the “lifetime” of the message). During this time, the messages are delivered to any users who connect to the platform and subscribe to the topic of these messages (or, if already online, subscribe to the topic later). Each persistent message has its own lifetime, which may differ across messages. The user sending the message must specify the message duration (in seconds) when sending it. If the specified duration is 0, the message will be treated as non-persistent. Once the specified lifetime expires, the manager discards the message. <br />
 Upon startup, the manager loads any persistent messages still within their lifetime from a text file (implicitly creating the respective topics). For these messages, the timer continues without resetting their remaining lifetime. Further details are provided later.
+
+### Types of users
+There are two user types:
+- Client: Participates on the platform through written commands, sending messages and subscribing to topics via a text-based interface in a dedicated terminal. Clients cannot directly interact with each other.
+- Administrator: Controls and launches the manager, interacting with the platform via commands through the manager’s standard input. This administrator is unrelated to the OS root user.
