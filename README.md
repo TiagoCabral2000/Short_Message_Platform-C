@@ -68,4 +68,4 @@ Persistent messages with remaining time are saved to a text file when the manage
 - manager cycle to receive new messages (manager named pipe - read)
 - save topics and user pid's: -bidimensional array for topics and users?
 - resend message to users registred in topic (multiple named pipes - server to multiple clients) - maybe just regist all client pid's in one array and send it for all first
-- ...
+- ... estrutura para cada comando?
