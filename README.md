@@ -31,3 +31,20 @@ Persistent messages with remaining time are saved to a text file when the manage
 - File Format: Each line has <topic_name> <author_username> <remaining_lifetime> <message_body>.
 - Transmission: Message body can be up to 300 characters; efficient solutions only send the actual text used.
 - Manager Time Control: Persistent messages expire after their specified lifetime and are automatically removed by the manager
+
+### Feed Commands
+
+- List All Topics: topics
+Displays existing topics, the number of persistent messages in each, and their status (locked/unlocked).
+
+- Send Message: msg <topic> <duration> <message>
+Sends a message to a topic, with duration indicating if it's persistent (non-zero). Delivered immediately to current subscribers and, if persistent, to future subscribers within its lifetime.
+
+- Subscribe to Topic: subscribe <topic>
+Immediately provides all persistent messages if the topic exists. If the topic doesn’t exist and the topic limit isn’t reached, it’s created. The user then receives future messages for this topic.
+
+- Unsubscribe from Topic: unsubscribe <topic>
+Stops receiving messages for this topic. If no persistent messages remain and no users are subscribed, the topic is removed entirely.
+
+- Exit: exit
+Closes the feed process.
