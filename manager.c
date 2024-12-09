@@ -17,6 +17,29 @@ typedef struct {
     int tipo, pid, resultado, duracao;
     char username[20], topico[20], mensagem[300], msg_devolucao[50];
 } TUDOJUNTO;
+TUDOJUNTO contentor;
+
+//thread para ir verificando se esta vivo o cliente
+
+// read (fd,&tipo,sizeof(tipo);
+// if tipo == 1
+//   read (fd,&login,ds)
+
+
+// typedef struct {
+//     int tipo; //1
+//     LOGIN login;
+// } env1;
+
+// typedef struct {
+//     int tipo;
+//     MSG msg;
+// } env2;
+
+// typedef struct {
+//     int tipo;
+//    ;
+// } env1;
 
 typedef struct {
     char nome_topico[20];
@@ -25,6 +48,7 @@ typedef struct {
 	 char msg_persistentes[5][300];
 	 int tempo[5];
 	 int numPersistentes;
+    int bloqueado;
 } Topico;
 
 #define MAX_TOPICOS 20
@@ -36,11 +60,14 @@ typedef struct {
    char usernames[MAX_CLIENTES][20];
 	int pids[20];
 	int numCli;
+   pthread_mutex_t *m;
+   int lock;
 } ServerData;
 
 void novoLogin(TUDOJUNTO* cont, ServerData *serverdata);
-void analisaTopico(TUDOJUNTO* container, Topico* topicos, int* numTopicos);
+int analisaTopico(TUDOJUNTO* container, Topico* topicos, int* numTopicos);
 void subscreveCliente(TUDOJUNTO* container, Topico* topicos, ServerData* serverData);
+void guardaPersistentes(TUDOJUNTO* container, ServerData* ServerData);
 void distribuiMensagem(TUDOJUNTO* container, ServerData* serverData);
 void apagaUsername(char username[20], ServerData* serverData, Topico* topicos);
 
@@ -53,7 +80,7 @@ void handler_sigalrm(int s) {
 
 void* processaNamedPipes(void* aux) {
     ServerData* serverData = (ServerData*)aux;
-    TUDOJUNTO contentor;
+    //TUDOJUNTO contentor;
 	 int size;
 
     int fd_recebe = open(MANAGER_FIFO, O_RDWR);
@@ -62,17 +89,22 @@ void* processaNamedPipes(void* aux) {
         pthread_exit(NULL);
     }
 
-    while (1) {
+    while (serverData->lock == 0) {
         size = read(fd_recebe, &contentor, sizeof(contentor));
-        printf("\n--------Recebi algo de %d---------\n", contentor.pid);
+        
         if (size > 0) {
             if (contentor.tipo == 1) {
                novoLogin(&contentor, serverData);
             } 
             else if (contentor.tipo == 2) {
-               analisaTopico(&contentor, serverData->topicos, &serverData->numTopicos);
-               subscreveCliente(&contentor, serverData->topicos, serverData);
-               distribuiMensagem(&contentor, serverData);
+               int res;
+               res = analisaTopico(&contentor, serverData->topicos, &serverData->numTopicos);
+               if (res == 0){
+                  subscreveCliente(&contentor, serverData->topicos, serverData);
+                  guardaPersistentes(&contentor, serverData);
+                  distribuiMensagem(&contentor, serverData);
+               }
+               else{printf("\nErro");}
             } 
             else if (contentor.tipo == 3) {
                printf("\n\n------------------- TOPICOS ------------------- \n");
@@ -92,12 +124,10 @@ void* processaNamedPipes(void* aux) {
                printf("\nUNSUBSCRIBE ainda nao implementado");
             }
             else if(contentor.tipo == 6){
-					printf("\nANTES DO APAGA_USERNAME\n");
                apagaUsername(contentor.username, serverData, serverData->topicos);
-					printf("\nSAI DO APAGA_USERNAME\n");
 				}
 				else{
-					printf("\n\n\nWTF");
+					printf("\nTipo n existe");
 				}
         }
     }
@@ -107,9 +137,39 @@ void* processaNamedPipes(void* aux) {
     return NULL;
 }
 
+void* descontaTempo(void *aux){
+   ServerData *serverData = (ServerData *) aux;
+   int i, j, k;
+   while (serverData->lock == 0){
+      sleep(1);
+      pthread_mutex_lock(serverData->m);
+      for (i = 0; i < serverData->numTopicos; i++) {
+         if (serverData->topicos[i].numPersistentes > 0){
+            for (j = 0; j < serverData->topicos[i].numPersistentes; j++){
+               serverData->topicos[i].tempo[j]--;
+               if (serverData->topicos[i].tempo[j] == 0){
+                  for (k=j; k < serverData->topicos[i].numPersistentes; k++){
+                     serverData->topicos[i].tempo[k] = serverData->topicos[i].tempo[k+1];
+                     strcpy(serverData->topicos[i].msg_persistentes[k], serverData->topicos[i].msg_persistentes[k+1]);
+                  }
+                  strcpy(serverData->topicos[i].msg_persistentes[k], "\0");
+                  serverData->topicos[i].tempo[k] = 0;
+                  serverData->topicos[i].numPersistentes--;
+               }
+            }
+         }
+      }
+      pthread_mutex_unlock(serverData->m);
+   }
+}
+
 int main() {
+    pthread_mutex_t mutex; 
+    pthread_mutex_init (&mutex,NULL); 
     ServerData serverData = {0};
-    pthread_t thr_pipes;
+    serverData.lock = 0;
+    serverData.m = &mutex;
+    pthread_t thr_pipes, thr_tempo;
 
     struct sigaction sa;
     sa.sa_handler = handler_sigalrm;
@@ -122,6 +182,10 @@ int main() {
     }
 
     if (pthread_create(&thr_pipes, NULL, processaNamedPipes, &serverData) != 0) {
+        perror("Erro ao criar thread");
+        return 1;
+    }
+    if (pthread_create(&thr_tempo, NULL, descontaTempo, &serverData) != 0) {
         perror("Erro ao criar thread");
         return 1;
     }
@@ -139,11 +203,17 @@ int main() {
                apagaUsername(username, &serverData, serverData.topicos); // Enviar mensagem para tópico
             } 
             else if (strcmp(buffer, "topics") == 0) {
-               printf("\n\n------------------- TOPICOS ------------------- \n");
+               printf("\n------------------- TOPICOS ------------------- \n");
                 for (int i = 0; i < serverData.numTopicos; i++) {
                     printf("Topico %d - '%s' - Clientes: ", i, serverData.topicos[i].nome_topico);
                     for (int j = 0; j < serverData.topicos[i].numClientes; j++) {
                         printf("[%d] ", serverData.topicos[i].pid_clientes[j]);
+                    }
+                    if (serverData.topicos[i].bloqueado == 0){printf("\nEstado: desbloquado");}
+                    else{printf("\nEstado: bloqueado");}
+                    printf("\nNumero de msg persistentes no topico = %d\n", serverData.topicos[i].numPersistentes);
+                    for (int k = 0; k <5; k++){
+                     printf("msg %d: {%s}, tempo = {%d}\n", k+1,serverData.topicos[i].msg_persistentes[k], serverData.topicos[i].tempo[k]);
                     }
                     printf("\n");
                 }
@@ -153,11 +223,59 @@ int main() {
                
             } 
             else if (sscanf(buffer, "lock %19s", nomeTopico) == 1) {
-               
+               int found = 0;
+               for (int i = 0; i < serverData.numTopicos; i++){
+                  if (strcmp(serverData.topicos[i].nome_topico, nomeTopico) == 0){
+                     found = 1;
+                     serverData.topicos[i].bloqueado = 1;
+                  }
+               }
+               if(found == 1){
+                  printf("\nTopico %s bloqueado!\n", nomeTopico);
+               }
+               else{
+                  printf("\nTopico %s nao encontrado!\n", nomeTopico);
+               }
             } 
+
+            else if (sscanf(buffer, "unlock %19s", nomeTopico) == 1) {
+               int found = 0;
+               for (int i = 0; i < serverData.numTopicos; i++){
+                  if (strcmp(serverData.topicos[i].nome_topico, nomeTopico) == 0){
+                     found = 1;
+                     serverData.topicos[i].bloqueado = 0;
+                  }
+               }
+               if(found == 1){
+                  printf("\nTopico %s desbloqueado!\n", nomeTopico);
+               }
+               else{
+                  printf("\nTopico %s nao encontrado!\n", nomeTopico);
+               }
+            } 
+
             else if (strcmp(buffer, "close") == 0) {
+               serverData.lock = 1;
+
+               
+
                kill(getpid(), SIGINT);
                break;
+            }
+            else if (strcmp(buffer, "users") == 0) {
+               printf("*********************************");
+               printf("\n -> Numero clientes ativos = %d", serverData.numCli);
+               printf("\n -> Usernames registados: ");
+               for (int i = 0; i < 10; i++){
+                  printf("[%s] ", serverData.usernames[i]);
+               }
+               printf("\n");
+               printf(" -> PID's registados: ");
+               for (int i = 0; i < 10; i++){
+                  printf("[%d] ", serverData.pids[i]);
+               }
+               printf("\n*********************************\n");
+
             }
          } 
          else {
@@ -170,10 +288,6 @@ int main() {
    pthread_join(thr_pipes, NULL);
    return 0;
 }
-
-// Implementação de novoLogin, analisaTopico, subscreveCliente, distribuiMensagem permanece igual
-
-
 
 void novoLogin(TUDOJUNTO* cont, ServerData *serverData) {
    //cont->tipo = 1;
@@ -205,7 +319,7 @@ void novoLogin(TUDOJUNTO* cont, ServerData *serverData) {
 
    sprintf(CLIENT_FIFO_FINAL, CLIENT_FIFO, cont->pid);
 
-   printf("\nDEBUG - Enviar mensagem para %s\n", CLIENT_FIFO_FINAL);
+   printf("\nDEBUG - Enviar pelo named pipe %s\n", CLIENT_FIFO_FINAL);
 
    fd_envia = open(CLIENT_FIFO_FINAL, O_WRONLY);
 
@@ -216,63 +330,58 @@ void novoLogin(TUDOJUNTO* cont, ServerData *serverData) {
    else {
       printf("Erro ao abrir FIFO para cliente %d\n", cont->pid);
    }
-
-   printf("\nUsernames registados: ");
-   for (int i = 0; i < 10; i++){
-      printf("[%s] ", serverData->usernames[i]);
-   }
-   printf("\n");
-	printf("PID's registados: ");
-	for (int i = 0; i < 10; i++){
-      printf("[%d] ", serverData->pids[i]);
-   }
-
-   fflush(stdout);
 }
 
 
-void analisaTopico(TUDOJUNTO* container, Topico* topicos, int* numTopicos) {
+int analisaTopico(TUDOJUNTO* container, Topico* topicos, int* numTopicos) {
     int topic_exists = 0;
+    int index;
     int free_slot = -1;
 
     // Procura pelo tópico ou um slot livre
     for (int i = 0; i < 20; i++){
         if (strcmp(topicos[i].nome_topico, container->topico) == 0) {
             topic_exists = 1;
+            index = i;
             break;
         }
         if (topicos[i].nome_topico[0] == '\0' && free_slot == -1) 
             free_slot = i; 
     }
 
-    if (topic_exists){
-      printf("O tópico já existe");
+    if (topic_exists == 1){
+      if(topicos[index].bloqueado == 1){
+         printf("\nTopico bloqueado!\n");
+         return 1;
+      }
     } 
     else if (free_slot != -1){ //Ha espaço para criar um novo topico
       strcpy(topicos[free_slot].nome_topico, container->topico);
       topicos[free_slot].pid_clientes[0] = container->pid;
       topicos[free_slot].numClientes = 1;
-      (*numTopicos)++;
-        
+      topicos[free_slot].bloqueado = 0;
+      (*numTopicos)++;  
     } 
     else{
       printf("Capacidade máxima de tópicos atingida");
+      return 1;
     }
+    return 0;
 }
 
 void subscreveCliente(TUDOJUNTO* container, Topico* topicos, ServerData* serverData) {
-   int found = 0; // Flag to track if the topic is found
-   int alreadySubscribed = 0; // Flag to track if the client is already subscribed
+   int found = 0; 
+   int alreadySubscribed = 0; 
 
    for (int i = 0; i < 20; i++) {
       // Verifica se o tópico corresponde
       if (strcmp(topicos[i].nome_topico, container->topico) == 0) {
-         found = 1; // Mark that the topic is found
+         found = 1; 
 
          // Verifica se o cliente já está inscrito
          for (int j = 0; j < topicos[i].numClientes; j++) {
             if (topicos[i].pid_clientes[j] == container->pid) {
-               alreadySubscribed = 1; // Mark as already subscribed
+               alreadySubscribed = 1; 
                break;
             }
          }
@@ -289,7 +398,7 @@ void subscreveCliente(TUDOJUNTO* container, Topico* topicos, ServerData* serverD
          else {
             strcpy(container->msg_devolucao, "Máximo de clientes atingido para este tópico");
          }
-         break; // Exit the loop since the topic was found
+         break; 
       }
    }
 
@@ -299,7 +408,7 @@ void subscreveCliente(TUDOJUNTO* container, Topico* topicos, ServerData* serverD
 
    if (container->tipo == 4){
       sprintf(CLIENT_FIFO_FINAL, CLIENT_FIFO, container->pid);
-      printf("\nDEBUG - Enviar mensagem para %s\n", CLIENT_FIFO_FINAL);
+      printf("\nDEBUG - Enviar pelo named pipe %s\n", CLIENT_FIFO_FINAL);
 
       int fd_envia = open(CLIENT_FIFO_FINAL, O_WRONLY);
       if (fd_envia != -1) {
@@ -312,6 +421,31 @@ void subscreveCliente(TUDOJUNTO* container, Topico* topicos, ServerData* serverD
    } 
 }
 
+void guardaPersistentes(TUDOJUNTO* container, ServerData* ServerData){
+   int free_slot = -1;
+   int index = -1;
+   if(container->duracao > 0){
+      //percorrer o topico para verificar se ainda tenho espaco livre para adicionar mensagem persistente
+      for (int i = 0; i < ServerData->numTopicos; i++){
+         if(strcmp(ServerData->topicos[i].nome_topico, container->topico) == 0){
+            index = i;
+            for (int j = 0; j < 5; j++){
+               if (strcmp(ServerData->topicos[i].msg_persistentes[j], "\0") == 0){
+                  free_slot = j;
+                  break;
+               }
+            }
+            if(free_slot == -1 || index == -1){printf("\nSEM ESPACO PARA MSG PERSISTENTE OU TOPICO N ENCONTRAADO!");}
+            break;
+         }
+      }
+      pthread_mutex_lock(ServerData->m);
+      strcpy(ServerData->topicos[index].msg_persistentes[free_slot], container->mensagem);
+      ServerData->topicos[index].tempo[free_slot] = container->duracao;
+      ServerData->topicos[index].numPersistentes++;
+      pthread_mutex_unlock(ServerData->m);
+   }
+}
 
 
 void distribuiMensagem(TUDOJUNTO* container, ServerData* serverData) {
@@ -322,7 +456,7 @@ void distribuiMensagem(TUDOJUNTO* container, ServerData* serverData) {
          for (int j = 0; j < serverData->topicos[i].numClientes; ++j) {
             sprintf(CLIENT_FIFO_FINAL, CLIENT_FIFO, serverData->topicos[i].pid_clientes[j]);
 
-            printf("\nDEBUG - Enviar mensagem para %s\n", CLIENT_FIFO_FINAL);
+            printf("\nDEBUG - Enviar pelo named pipe %s\n", CLIENT_FIFO_FINAL);
 
             fd_envia = open(CLIENT_FIFO_FINAL, O_WRONLY);
 
@@ -342,6 +476,11 @@ void apagaUsername(char username[20], ServerData* serverData, Topico* topicos) {
    int pid = -1;
 	int index;
 	int fd_envia;
+   char nome[20];
+   strcpy(nome, username);
+
+   printf("Remover %s...\n", nome);
+   fflush(stdout);
     // Find and remove the username
     for (index = 0; index < MAX_CLIENTES; index++) {
         if (strcmp(serverData->usernames[index], username) == 0) {
@@ -359,8 +498,6 @@ void apagaUsername(char username[20], ServerData* serverData, Topico* topicos) {
         }
     }
 
-
-
     // Remove the client from topics
     for (int i = 0; i < MAX_TOPICOS; i++) {
         for (int j = 0; j < topicos[i].numClientes; j++) {
@@ -373,89 +510,42 @@ void apagaUsername(char username[20], ServerData* serverData, Topico* topicos) {
             }
         }
     }
-	printf("\n\nNUMERO DE CLIENTES = %d", serverData->numCli);
-	printf("\nUsernames registados: ");
-   for (int i = 0; i < 10; i++){
-      printf("[%s] ", serverData->usernames[i]);
-   }
-   printf("\n");
-	printf("PID's registados: ");
-	for (int i = 0; i < 10; i++){
-      printf("[%d] ", serverData->pids[i]);
-   }
-
-	printf("\nPID GUARDADO = %d | POSICAO DO ARRAY = %d |NAME = %s", pid, index, username);
-   fflush(stdout);
-
-    // Notify the client 
 	 //Com o codigo abaixo, no segundo cliente que fizer exit, recebe valores random preenchidos no container
-/* 
-   if (pid > 0) {
-    TUDOJUNTO container;
-    container.tipo = 6;
+
+if (pid > 0) {
+    //TUDOJUNTO container;
+    contentor.tipo = 6;
     sprintf(CLIENT_FIFO_FINAL, CLIENT_FIFO, pid);
 
-    printf("\nCLIENT_FIFO path: %s\n", CLIENT_FIFO_FINAL);
-
-    fd_envia = open(CLIENT_FIFO_FINAL, O_WRONLY | O_NONBLOCK);
-    if (fd_envia != -1) {
-        printf("\nWriting to client...");
-        if (write(fd_envia, &container, sizeof(container)) == -1) {
-            perror("Failed to write to client FIFO");
-        }
-        close(fd_envia);
-    } else {
-        perror("Failed to open client FIFO");
+    fd_envia = open(CLIENT_FIFO_FINAL, O_WRONLY);
+    if (fd_envia == -1) {
+        printf("Falha ao abrir o named pipe");
+        return;
     }
 
-    // Notify other clients
+    if (write(fd_envia, &contentor, sizeof(contentor)) == -1) {
+        printf("Falha ao escrever no named pipe");
+    }
+    close(fd_envia);
+
+   contentor.tipo = 7;
     for (int i = 0; i < serverData->numCli; i++) {
         if (serverData->pids[i] > 0) {
-            container.tipo = 7;
-            snprintf(container.msg_devolucao, sizeof(container.msg_devolucao), "\nCliente [%s] desconectado!\n", username);
-
+            snprintf(contentor.msg_devolucao, sizeof(contentor.msg_devolucao), "\nCliente [%s] desconectado!\n", nome);
             sprintf(CLIENT_FIFO_FINAL, CLIENT_FIFO, serverData->pids[i]);
-            printf("\nBroadcasting disconnection -- CLIENT_FIFO path: %s\n", CLIENT_FIFO_FINAL);
 
-            fd_envia = open(CLIENT_FIFO_FINAL, O_WRONLY | O_NONBLOCK);
+            fd_envia = open(CLIENT_FIFO_FINAL, O_WRONLY);
             if (fd_envia != -1) {
-                if (write(fd_envia, &container, sizeof(container)) == -1) {
-                    perror("Failed to broadcast to client FIFO");
+                if (write(fd_envia, &contentor, sizeof(contentor)) == -1) {
+                    printf("Falha a escrever ao cliente");
                 }
                 close(fd_envia);
-            } else {
-                perror("Failed to open broadcast FIFO");
+            } 
+            else {
+                printf("Falha a abrir o pipe para escrita");
             }
         }
     }
 }
-*/
 
-	
 }
-
-
-
-	//container.tipo = 7;
-
-	//ServerData->pids
-	// for (int i = 0; i < serverData->numCli; i++){
-	// 	sprintf(CLIENT_FIFO_FINAL, CLIENT_FIFO, serverData->pids[i]);
-
-	// 	printf("\nDEBUG - Enviar mensagem para %s\n", CLIENT_FIFO_FINAL);
-
-	// 	int fd_envia = open(CLIENT_FIFO_FINAL, O_WRONLY);
-
-	// 	if (fd_envia != -1) {
-	// 		write(fd_envia, &container, sizeof(container)); // Envia a mensagem
-	// 		close(fd_envia);
-	// 	} 
-	// 	else {
-	// 		printf("Erro ao abrir FIFO para cliente %d\n", pid);
-	// 	}
-
-	// }
-
-
-
-

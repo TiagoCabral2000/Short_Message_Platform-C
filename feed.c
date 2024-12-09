@@ -40,12 +40,6 @@ int main(int argc, char *argv[]){
       printf("\nNumero de parametros invalido!\nSintaxe a utilizar: './feed username'\n");
       return 0;
    }
-//--------------------------------------------------
-   // structs_container container;
-   // container.tipo = 1;
-   // container.content.log.pid = getpid();
-   // strcpy(container.content.log.username, argv[1]);
-//--------------------------------------------------
 
    TUDOJUNTO contentor;
    contentor.tipo = 1;
@@ -56,7 +50,6 @@ int main(int argc, char *argv[]){
    sa.sa_handler = handler_sigalrm;
    sa.sa_flags = SA_RESTART;
    sigaction(SIGINT, &sa, NULL);
-
 
    struct timeval tv;
    fd_set read_fds;
@@ -95,20 +88,23 @@ int main(int argc, char *argv[]){
       return 0;
    }
 
+   int flag = 0;
+
    do{
       FD_ZERO(&read_fds);
       FD_SET(0, &read_fds);
       FD_SET(fd_recebe, &read_fds);
       nfd = select(fd_recebe+1, &read_fds, NULL, NULL, NULL);
-
-      int fd_envia = open(MANAGER_FIFO, O_WRONLY);
-      if (fd_envia == -1) {
-         printf("Erro ao abrir o FIFO do servidor");
-         return 1;
-      }
-
       
+      contentor.pid = getpid();
+      strcpy(contentor.username, argv[1]);
+
       if (FD_ISSET(0, &read_fds)) {
+         int fd_envia = open(MANAGER_FIFO, O_WRONLY);
+         if (fd_envia == -1) {
+            printf("Erro ao abrir o FIFO do servidor");
+            return 1;
+         }
          char buffer[350]; 
          if (fgets(buffer, sizeof(buffer), stdin)) {
             // Remove o '\n' do final da string (se houver)
@@ -128,13 +124,12 @@ int main(int argc, char *argv[]){
                contentor.tipo = 5; // Deixar de subscrever um tópico
             } 
             else if (strcmp(buffer, "exit") == 0) {
-               contentor.tipo = 6;
+               contentor.tipo = 6; //fechar 
             } 
             else {
                printf("Comando inválido. Tente novamente.\n");
-               continue; // Espera uma nova entrada válida
+               continue;
             }
-
 
             if (write(fd_envia, &contentor, sizeof(contentor)) == -1) {
                printf("Erro ao escrever no FIFO do servidor\n");
@@ -142,18 +137,6 @@ int main(int argc, char *argv[]){
                unlink(CLIENT_FIFO_FINAL);
                return 2;
             }
-            // else{
-            //    printf("\nEscrevi de %d\n", getpid());
-            // }
-            // if(contentor.tipo == 6){
-            //    printf("\nA encerrar cliente...\n");
-            //    fflush(stdout);
-            //    close(fd_recebe); 
-            //    close(fd_envia);  
-            //    unlink(CLIENT_FIFO_FINAL);  
-            //    sleep(2);
-            //    return 0;
-            // }
          }
       }
 
@@ -162,7 +145,7 @@ int main(int argc, char *argv[]){
          int size = read(fd_recebe, &contentor, sizeof(contentor));
          if (size > 0) {
             if (contentor.tipo == 1){
-               printf("\n%s", contentor.msg_devolucao); //Mostra mensagem devolvida pelo manager
+               printf("\n%s", contentor.msg_devolucao); 
                if(contentor.resultado == 0){ //Nao deu para registar
                   close(fd_recebe); 
                   close(fd_envia);  
@@ -186,13 +169,10 @@ int main(int argc, char *argv[]){
             else if(contentor.tipo == 6){
                printf("\nA encerrar cliente...\n");
                fflush(stdout);
-               close(fd_recebe); 
-               close(fd_envia);  
-               unlink(CLIENT_FIFO_FINAL);  
+               flag = 1;
                sleep(2);
-               return 0;
             }
-            else if(contentor.tipo == 7){
+            else if(contentor.tipo == 7){ //outro cliente desconectou se
                printf("%s", contentor.msg_devolucao);
                fflush(stdout);
             }
@@ -200,7 +180,7 @@ int main(int argc, char *argv[]){
       }
 
 
-}while(1);
+}while(flag == 0);
 
    close(fd_recebe); 
    close(fd_envia);  
