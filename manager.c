@@ -47,6 +47,7 @@ typedef struct {
     int numClientes;
 	 char msg_persistentes[5][300];
 	 int tempo[5];
+    char usernames[5][20];
 	 int numPersistentes;
     int bloqueado;
 } Topico;
@@ -62,6 +63,7 @@ typedef struct {
 	int numCli;
    pthread_mutex_t *m;
    int lock;
+   int fd;
 } ServerData;
 
 void novoLogin(TUDOJUNTO* cont, ServerData *serverdata);
@@ -82,12 +84,6 @@ void* processaNamedPipes(void* aux) {
     ServerData* serverData = (ServerData*)aux;
     //TUDOJUNTO contentor;
 	 int size;
-
-    int fd_recebe = open(MANAGER_FIFO, O_RDWR);
-    if (fd_recebe == -1) {
-        perror("Erro ao abrir FIFO do manager para leitura");
-        pthread_exit(NULL);
-    }
 
     while (serverData->lock == 0) {
         size = read(fd_recebe, &contentor, sizeof(contentor));
@@ -151,8 +147,10 @@ void* descontaTempo(void *aux){
                   for (k=j; k < serverData->topicos[i].numPersistentes; k++){
                      serverData->topicos[i].tempo[k] = serverData->topicos[i].tempo[k+1];
                      strcpy(serverData->topicos[i].msg_persistentes[k], serverData->topicos[i].msg_persistentes[k+1]);
+                     strcpy(serverData->topicos[i].usernames[k], serverData->topicos[i].usernames[k+1]);
                   }
                   strcpy(serverData->topicos[i].msg_persistentes[k], "\0");
+                  strcpy(serverData->topicos[i].usernames[k], "\0");
                   serverData->topicos[i].tempo[k] = 0;
                   serverData->topicos[i].numPersistentes--;
                }
@@ -163,29 +161,47 @@ void* descontaTempo(void *aux){
    }
 }
 
+void* descontaTempo(void *aux){
+   ServerData *serverData = (ServerData *) aux;
+   int fd = 
+}
+
 int main() {
     pthread_mutex_t mutex; 
     pthread_mutex_init (&mutex,NULL); 
     ServerData serverData = {0};
     serverData.lock = 0;
     serverData.m = &mutex;
-    pthread_t thr_pipes, thr_tempo;
+    pthread_t thr_pipes, thr_tempo, thr_alive;
 
     struct sigaction sa;
     sa.sa_handler = handler_sigalrm;
     sa.sa_flags = SA_RESTART;
     sigaction(SIGINT, &sa, NULL);
 
-    if (mkfifo(MANAGER_FIFO, 0666) == -1 && errno != EEXIST) {
+// && errno != EEXIST
+    if (mkfifo(MANAGER_FIFO, 0666) == -1) {
         perror("Erro ao criar FIFO do manager");
         return 1;
     }
+
+    int fd_recebe = open(MANAGER_FIFO, O_RDWR);
+    if (fd_recebe == -1) {
+        perror("Erro ao abrir FIFO do manager para leitura");
+        pthread_exit(NULL);
+    }
+
+    serverData.fd = fd_recebe;
 
     if (pthread_create(&thr_pipes, NULL, processaNamedPipes, &serverData) != 0) {
         perror("Erro ao criar thread");
         return 1;
     }
     if (pthread_create(&thr_tempo, NULL, descontaTempo, &serverData) != 0) {
+        perror("Erro ao criar thread");
+        return 1;
+    }
+    if (pthread_create(&thr_alive, NULL, verificaClientes, &serverData) != 0) {
         perror("Erro ao criar thread");
         return 1;
     }
@@ -213,7 +229,7 @@ int main() {
                     else{printf("\nEstado: bloqueado");}
                     printf("\nNumero de msg persistentes no topico = %d\n", serverData.topicos[i].numPersistentes);
                     for (int k = 0; k <5; k++){
-                     printf("msg %d: {%s}, tempo = {%d}\n", k+1,serverData.topicos[i].msg_persistentes[k], serverData.topicos[i].tempo[k]);
+                        printf("msg %d: {%s}, username {%s}, tempo = {%d}\n", k+1,serverData.topicos[i].msg_persistentes[k], serverData.topicos[i].usernames[k], serverData.topicos[i].tempo[k]);
                     }
                     printf("\n");
                 }
@@ -372,6 +388,7 @@ int analisaTopico(TUDOJUNTO* container, Topico* topicos, int* numTopicos) {
 void subscreveCliente(TUDOJUNTO* container, Topico* topicos, ServerData* serverData) {
    int found = 0; 
    int alreadySubscribed = 0; 
+   int fd_envia;
 
    for (int i = 0; i < 20; i++) {
       // Verifica se o tópico corresponde
@@ -394,6 +411,22 @@ void subscreveCliente(TUDOJUNTO* container, Topico* topicos, ServerData* serverD
             topicos[i].pid_clientes[topicos[i].numClientes] = container->pid;
             topicos[i].numClientes++;
             strcpy(container->msg_devolucao, "Subscrito com sucesso!");
+
+            for (int j = 0; j < topicos[i].numPersistentes; j++){
+               container->tipo = 2;
+               strcpy(container->mensagem, topicos[i].msg_persistentes[j]);
+               strcpy(container->topico, topicos[i].nome_topico);
+               strcpy(container->username, topicos[i].usernames[j]);
+               sprintf(CLIENT_FIFO_FINAL, CLIENT_FIFO, container->pid);
+               fd_envia = open(CLIENT_FIFO_FINAL, O_WRONLY);
+               if (fd_envia != -1) {
+                  write(fd_envia, container, sizeof(*container)); // Envia a mensagem
+                  close(fd_envia);
+               }
+               else {
+                  printf("Erro ao abrir FIFO para cliente %d\n", container->pid);
+               } 
+            }
          } 
          else {
             strcpy(container->msg_devolucao, "Máximo de clientes atingido para este tópico");
@@ -410,7 +443,7 @@ void subscreveCliente(TUDOJUNTO* container, Topico* topicos, ServerData* serverD
       sprintf(CLIENT_FIFO_FINAL, CLIENT_FIFO, container->pid);
       printf("\nDEBUG - Enviar pelo named pipe %s\n", CLIENT_FIFO_FINAL);
 
-      int fd_envia = open(CLIENT_FIFO_FINAL, O_WRONLY);
+      fd_envia = open(CLIENT_FIFO_FINAL, O_WRONLY);
       if (fd_envia != -1) {
          write(fd_envia, container, sizeof(*container)); // Envia a mensagem
          close(fd_envia);
@@ -441,6 +474,7 @@ void guardaPersistentes(TUDOJUNTO* container, ServerData* ServerData){
       }
       pthread_mutex_lock(ServerData->m);
       strcpy(ServerData->topicos[index].msg_persistentes[free_slot], container->mensagem);
+      strcpy(ServerData->topicos[index].usernames[free_slot], container->username);
       ServerData->topicos[index].tempo[free_slot] = container->duracao;
       ServerData->topicos[index].numPersistentes++;
       pthread_mutex_unlock(ServerData->m);
@@ -498,7 +532,6 @@ void apagaUsername(char username[20], ServerData* serverData, Topico* topicos) {
         }
     }
 
-    // Remove the client from topics
     for (int i = 0; i < MAX_TOPICOS; i++) {
         for (int j = 0; j < topicos[i].numClientes; j++) {
             if (topicos[i].pid_clientes[j] == pid) {
@@ -510,7 +543,7 @@ void apagaUsername(char username[20], ServerData* serverData, Topico* topicos) {
             }
         }
     }
-	 //Com o codigo abaixo, no segundo cliente que fizer exit, recebe valores random preenchidos no container
+	
 
 if (pid > 0) {
     //TUDOJUNTO container;

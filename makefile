@@ -1,5 +1,5 @@
 
-all: feed manager //vai correr o q esta a frente do all 
+all: feed manager
 
 manager: manager.o
 	gcc -o manager manager.o -pthread

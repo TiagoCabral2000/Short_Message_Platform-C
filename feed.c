@@ -154,7 +154,7 @@ int main(int argc, char *argv[]){
                }
             }
             else if (contentor.tipo == 2){
-               printf("\nMensagem recebida -> [%s] [%s] [%s]\n", contentor.topico, contentor.username, contentor.mensagem);
+               printf("\nNova mensagem! user:[%s] topico:[%s] msg:[%s]\n", contentor.username, contentor.topico, contentor.mensagem);
                if(contentor.resultado == 0){
                   close(fd_recebe); 
                   close(fd_envia);  
@@ -175,6 +175,9 @@ int main(int argc, char *argv[]){
             else if(contentor.tipo == 7){ //outro cliente desconectou se
                printf("%s", contentor.msg_devolucao);
                fflush(stdout);
+            }
+            else if (contentor.tipo == 8){
+               write(fd_envia, &contentor, sizeof(contentor));
             }
          }
       }
