@@ -75,6 +75,7 @@ void subscreveCliente(TUDOJUNTO* container, Topico* topicos, ServerData* serverD
 void guardaPersistentes(TUDOJUNTO* container, ServerData* ServerData);
 void distribuiMensagem(TUDOJUNTO* container, ServerData* serverData);
 void apagaUsername(char username[20], ServerData* serverData, Topico* topicos);
+void unsubscribe(TUDOJUNTO* container, ServerData* ServerData);
 
 void guardaPersistentesFicheiro(ServerData* serverData);
 void recuperaPersistentesFicheiro(ServerData* serverData);
@@ -123,7 +124,7 @@ void* processaNamedPipes(void* aux) {
             	subscreveCliente(&contentor, serverData->topicos, serverData);
             }
             else if(contentor.tipo == 5){
-               printf("\nUNSUBSCRIBE ainda nao implementado");
+               unsubscribe(&contentor, serverData);
             }
             else if(contentor.tipo == 6){
                printf("\nUsername: %s, PID = %d", contentor.username, contentor.pid);
@@ -614,6 +615,49 @@ void apagaUsername(char username[20], ServerData* serverData, Topico* topicos) {
     
    }
 
+}
+
+void unsubscribe(TUDOJUNTO* container, ServerData* ServerData){
+   int alreadySubscribed = 0; 
+   int fd_envia;
+   int index;
+
+    for (int i = 0; i < 20; i++) {
+      if (strcmp(container->topico, ServerData->topicos[i].nome_topico) == 0){
+         for (int j = 0; j < ServerData->topicos[i].numClientes; j++) {
+               if (ServerData->topicos[i].pid_clientes[j] == container->pid) {
+                  alreadySubscribed = 1; 
+                  for (int k = j; k < ServerData->topicos[i].numClientes; k++){
+                        ServerData->topicos[i].pid_clientes[k] = ServerData->topicos[i].pid_clientes[k+1];
+                  }  
+                  ServerData->topicos[i].numClientes--;    
+               }
+         }
+         break;
+      }
+   }
+   if (alreadySubscribed == 0){
+      container->tipo = 4;
+      strcpy(container->msg_devolucao, "Nao estava subscrito no topico!");
+
+   }
+   else{
+      container->tipo = 4;
+      strcpy(container->msg_devolucao, "Subscricao retirada com sucesso!");
+   }
+
+    sprintf(CLIENT_FIFO_FINAL, CLIENT_FIFO, container->pid);
+
+      fd_envia = open(CLIENT_FIFO_FINAL, O_WRONLY);
+      if (fd_envia != -1) {
+         if (write(fd_envia, &contentor, sizeof(contentor)) == -1) {
+            printf("Falha a escrever ao cliente");
+         }
+         close(fd_envia);
+      } 
+      else {
+         printf("Falha a abrir o pipe para escrita");
+      }
 }
 
 void encerraTodosClientes(ServerData* serverData){

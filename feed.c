@@ -178,7 +178,7 @@ int main(int argc, char *argv[]) {
                }
             } 
             else if (contentor.tipo == 4){
-               printf("\n%s\n\n", contentor.msg_devolucao);
+               printf("\n%s", contentor.msg_devolucao);
                fflush(stdout);
             }
             else if(contentor.tipo == 6){
