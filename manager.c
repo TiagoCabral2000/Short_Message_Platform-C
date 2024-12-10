@@ -114,7 +114,6 @@ void* processaNamedPipes(void* aux) {
                   subscreveCliente(&contentor, serverData->topicos, serverData);
                   distribuiMensagem(&contentor, serverData);
                }
-               else{printf("\nErro");}
             } 
             else if (contentor.tipo == 3) {
                char nome[20] = "\0";
@@ -338,8 +337,6 @@ void novoLogin(TUDOJUNTO* cont, ServerData *serverData) {
 
    sprintf(CLIENT_FIFO_FINAL, CLIENT_FIFO, cont->pid);
 
-   printf("\nDEBUG - Enviar pelo named pipe %s\n", CLIENT_FIFO_FINAL);
-
    fd_envia = open(CLIENT_FIFO_FINAL, O_WRONLY);
 
    if (fd_envia != -1) {
@@ -356,6 +353,8 @@ int analisaTopico(TUDOJUNTO* container, Topico* topicos, int* numTopicos) {
     int topic_exists = 0;
     int index;
     int free_slot = -1;
+    int res = 0;
+    int envia_msg = 0;
 
     // Procura pelo tópico ou um slot livre
     for (int i = 0; i < 20; i++){
@@ -370,8 +369,9 @@ int analisaTopico(TUDOJUNTO* container, Topico* topicos, int* numTopicos) {
 
     if (topic_exists == 1){
       if(topicos[index].bloqueado == 1){
-         printf("\nTopico bloqueado!\n");
-         return 1;
+         strcpy(container->msg_devolucao, "Topico bloqueado pelo administrador!\n");
+         envia_msg = 1;
+         res = 1;
       }
     } 
     else if (free_slot != -1){ //Ha espaço para criar um novo topico
@@ -382,10 +382,25 @@ int analisaTopico(TUDOJUNTO* container, Topico* topicos, int* numTopicos) {
       (*numTopicos)++;  
     } 
     else{
-      printf("Capacidade máxima de tópicos atingida");
-      return 1;
+      strcpy(container->msg_devolucao, "Capacidade máxima de tópicos atingida");
+      res = 1;
+      envia_msg = 1;
     }
-    return 0;
+
+      if(envia_msg == 1){
+         container->tipo = 4;
+         sprintf(CLIENT_FIFO_FINAL, CLIENT_FIFO, container->pid);
+
+         int fd_envia = open(CLIENT_FIFO_FINAL, O_WRONLY);
+         if (fd_envia != -1) {
+            write(fd_envia, container, sizeof(*container)); // Envia a mensagem
+            close(fd_envia);
+         } 
+         else {
+            printf("Erro ao abrir FIFO para cliente %d\n", container->pid);
+         }
+      }
+    return res;
 }
 
 void subscreveCliente(TUDOJUNTO* container, Topico* topicos, ServerData* serverData) {
@@ -433,7 +448,6 @@ void subscreveCliente(TUDOJUNTO* container, Topico* topicos, ServerData* serverD
 
    if (container->tipo == 4){ //Se o comando foi subscribe
       sprintf(CLIENT_FIFO_FINAL, CLIENT_FIFO, container->pid);
-      printf("\nDEBUG - Enviar pelo named pipe %s\n", CLIENT_FIFO_FINAL);
 
       fd_envia = open(CLIENT_FIFO_FINAL, O_WRONLY);
       if (fd_envia != -1) {
@@ -520,8 +534,6 @@ void distribuiMensagem(TUDOJUNTO* container, ServerData* serverData) {
       if (strcmp(serverData->topicos[i].nome_topico, container->topico) == 0) {
          for (int j = 0; j < serverData->topicos[i].numClientes; ++j) {
             sprintf(CLIENT_FIFO_FINAL, CLIENT_FIFO, serverData->topicos[i].pid_clientes[j]);
-
-            printf("\nDEBUG - Enviar pelo named pipe %s\n", CLIENT_FIFO_FINAL);
 
             fd_envia = open(CLIENT_FIFO_FINAL, O_WRONLY);
 
