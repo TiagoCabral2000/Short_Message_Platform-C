@@ -109,7 +109,6 @@ void* processaNamedPipes(void* aux) {
                if (res == 0){
                   guardaPersistentes(&contentor, serverData);
                   subscreveCliente(&contentor, serverData->topicos, serverData);
-                  
                   distribuiMensagem(&contentor, serverData);
                }
                else{printf("\nErro");}
@@ -388,6 +387,8 @@ void subscreveCliente(TUDOJUNTO* container, Topico* topicos, ServerData* serverD
    int alreadySubscribed = 0; 
    int fd_envia;
    int index;
+   char utilizador[20];
+   strcpy(utilizador, container->username);
 
    for (int i = 0; i < 20; i++) {
       // Verifica se o tópico corresponde
@@ -445,6 +446,10 @@ void subscreveCliente(TUDOJUNTO* container, Topico* topicos, ServerData* serverD
          strcpy(container->mensagem, topicos[index].msg_persistentes[j]);
          strcpy(container->topico, topicos[index].nome_topico);
          strcpy(container->username, topicos[index].usernames[j]);
+
+         if(strcmp(container->username, utilizador) == 0)
+            continue;
+         else{
                
                   sprintf(CLIENT_FIFO_FINAL, CLIENT_FIFO, container->pid);
                   fd_envia = open(CLIENT_FIFO_FINAL, O_WRONLY);
@@ -454,7 +459,8 @@ void subscreveCliente(TUDOJUNTO* container, Topico* topicos, ServerData* serverD
                   }
                   else {
                      printf("Erro ao abrir FIFO para cliente %d\n", container->pid);
-                  }     
+                  } 
+         }    
       }
    } 
    

@@ -20,16 +20,6 @@ void handler_sigalrm(int s) {
    exit(1);
 }
 
-// typedef struct {
-//     int tipo; 
-//     union {
-//         login log;
-//         login_feedback log_feedback;
-//         dataMSG data_message;
-//         devolveMSG return_message;
-//     } content;
-// } structs_container;
-
 typedef struct{
    int tipo, pid, resultado, duracao;
    char username[20], topico[20], mensagem[300], msg_devolucao[50]; 
@@ -121,6 +111,7 @@ int main(int argc, char *argv[]){
                contentor.tipo = 4; // Subscrever a um tópico
             } 
             else if (sscanf(buffer, "unsubscribe %19s", contentor.topico) == 1) {
+               contentor.pid = getpid();
                contentor.tipo = 5; // Deixar de subscrever um tópico
             } 
             else if (strcmp(buffer, "exit") == 0) {
