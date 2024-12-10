@@ -80,8 +80,10 @@ void guardaPersistentesFicheiro(ServerData* serverData);
 void recuperaPersistentesFicheiro(ServerData* serverData);
 
 void mostraTopicos(ServerData* serverData);
+void encerraTodosClientes(ServerData* serverData);
 
 void handler_sigalrm(int s, siginfo_t *info, void *context) {
+   encerraTodosClientes(global_server_data);
     if (global_server_data != NULL) {
         guardaPersistentesFicheiro(global_server_data); // Save the data
     }
@@ -123,6 +125,7 @@ void* processaNamedPipes(void* aux) {
                printf("\nUNSUBSCRIBE ainda nao implementado");
             }
             else if(contentor.tipo == 6){
+               printf("\nUsername: %s, PID = %d", contentor.username, contentor.pid);
                apagaUsername(contentor.username, serverData, serverData->topicos);
 				}
 				else{
@@ -271,7 +274,7 @@ int main() {
                serverData.lock = 1;
                guardaPersistentesFicheiro(&serverData);
                
-
+               encerraTodosClientes(&serverData);
                kill(getpid(), SIGINT);
                break;
             }
@@ -572,25 +575,26 @@ void apagaUsername(char username[20], ServerData* serverData, Topico* topicos) {
     }
 	
 
-if (pid > 0) {
+
     //TUDOJUNTO container;
-    contentor.tipo = 6;
-    sprintf(CLIENT_FIFO_FINAL, CLIENT_FIFO, pid);
+   //  contentor.tipo = 6;
+   //  sprintf(CLIENT_FIFO_FINAL, CLIENT_FIFO, pid);
 
-    fd_envia = open(CLIENT_FIFO_FINAL, O_WRONLY);
-    if (fd_envia == -1) {
-        printf("Falha ao abrir o named pipe");
-        return;
-    }
+   //  fd_envia = open(CLIENT_FIFO_FINAL, O_WRONLY);
+   //  if (fd_envia == -1) {
+   //      printf("Falha ao abrir o named pipe");
+   //      return;
+   //  }
 
-    if (write(fd_envia, &contentor, sizeof(contentor)) == -1) {
-        printf("Falha ao escrever no named pipe");
-    }
-    close(fd_envia);
+   //  if (write(fd_envia, &contentor, sizeof(contentor)) == -1) {
+   //      printf("Falha ao escrever no named pipe");
+   //  }
+   //  close(fd_envia);
 
-   contentor.tipo = 7;
+   
     for (int i = 0; i < serverData->numCli; i++) {
         if (serverData->pids[i] > 0) {
+         contentor.tipo = 7;
             snprintf(contentor.msg_devolucao, sizeof(contentor.msg_devolucao), "\nCliente [%s] desconectado!\n", nome);
             sprintf(CLIENT_FIFO_FINAL, CLIENT_FIFO, serverData->pids[i]);
 
@@ -605,9 +609,31 @@ if (pid > 0) {
                 printf("Falha a abrir o pipe para escrita");
             }
         }
-    }
+    
+   }
+
 }
 
+void encerraTodosClientes(ServerData* serverData){
+   int fd_envia;
+   for (int i = 0; i < serverData->numCli; i++) {
+        if (serverData->pids[i] > 0) {
+         contentor.tipo = 6;
+            sprintf(CLIENT_FIFO_FINAL, CLIENT_FIFO, serverData->pids[i]);
+
+            fd_envia = open(CLIENT_FIFO_FINAL, O_WRONLY);
+            if (fd_envia != -1) {
+                if (write(fd_envia, &contentor, sizeof(contentor)) == -1) {
+                    printf("Falha a escrever ao cliente");
+                }
+                close(fd_envia);
+            } 
+            else {
+                printf("Falha a abrir o pipe para escrita");
+            }
+        }
+    
+   }
 }
 
 

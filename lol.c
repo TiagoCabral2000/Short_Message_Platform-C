@@ -1,113 +1,9 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <fcntl.h>
-#include <sys/types.h>
-#include <unistd.h>
-#include <sys/stat.h>
-#include <signal.h>
-#include <errno.h>
-#include <sys/select.h>
-#include "estruturas.h"
-
-#define MANAGER_FIFO "MANAGER_FIFO"
-#define CLIENT_FIFO "CLIENT_FIFO%d"
-char CLIENT_FIFO_FINAL[100];
-
-typedef struct {
-   int tipo, pid, resultado, duracao;
-   char username[20], topico[20], mensagem[300], msg_devolucao[50]; 
-} TUDOJUNTO;
-
-int sigint_received = 0;
-
-void handler_sigint(int s) {
-    sigint_received = 1; 
-}
-
-int main(int argc, char *argv[]) {
-   if (argc != 2) {
-      printf("\nNumero de parametros invalido!\nSintaxe a utilizar: './feed username'\n");
-      return 0;
-   }
-
-   TUDOJUNTO contentor;
-   contentor.tipo = 1;
-   contentor.pid = getpid();
-   strcpy(contentor.username, argv[1]);
-
-   struct sigaction sa;
-   sa.sa_handler = handler_sigint; // Use simpler handler
-   sa.sa_flags = SA_RESTART;
-   sigaction(SIGINT, &sa, NULL);
-
-   fd_set read_fds;
-   int nfd;
-
-   // PREENCHE CLIENT_FIFO
-   sprintf(CLIENT_FIFO_FINAL, CLIENT_FIFO, contentor.pid);
-   if (mkfifo(CLIENT_FIFO_FINAL, 0666) == -1) {
-      if (errno != EEXIST) {
-         printf("Erro ao criar FIFO do cliente\n");
-         return 1;
-      }
-   }
-
-   // ABRE PIPE DO MANAGER PARA ESCRITA
-   int fd_envia = open(MANAGER_FIFO, O_WRONLY);
-   if (fd_envia == -1) {
-      printf("Erro ao abrir o FIFO do servidor\n");
-      return 1;
-   }
-
-   // ENVIA LOGIN PARA O MANAGER
-   if (write(fd_envia, &contentor, sizeof(contentor)) == -1) {
-      printf("Erro ao escrever no FIFO do servidor\n");
-      close(fd_envia);
-      unlink(CLIENT_FIFO_FINAL);
-      return 2;
-   }
-   close(fd_envia);
-
-   // CLIENTE ABRE O SEU NAMED PIPE PARA LEITURA
-   int fd_recebe = open(CLIENT_FIFO_FINAL, O_RDWR);
-   if (fd_recebe == -1) {
-      printf("Erro ao abrir o FIFO do cliente\n");
-      return 0;
-   }
-
-   int flag = 0;
-
-   do {
-      FD_ZERO(&read_fds);
-      FD_SET(0, &read_fds);
-      FD_SET(fd_recebe, &read_fds);
-      nfd = select(fd_recebe + 1, &read_fds, NULL, NULL, NULL);
 
       contentor.pid = getpid();
       strcpy(contentor.username, argv[1]);
 
 
-      if (sigint_received) {
-         // Handle SIGINT gracefully
-         int fd_envia = open(MANAGER_FIFO, O_WRONLY);
-         if (fd_envia != -1) {
-            contentor.tipo = 6; // Indicate shutdown
-            if (write(fd_envia, &contentor, sizeof(contentor)) == -1) {
-               printf("Erro ao escrever no FIFO do servidor\n");
-            }
-            close(fd_recebe); 
-            close(fd_envia);  
-            unlink(CLIENT_FIFO_FINAL);
-            printf("\nA encerrar cliente...\n");
-            fflush(stdout);
-            sleep(2);
-            return 0;
-         }
-         
-      }
-
-      if (FD_ISSET(0, &read_fds)) {
+if (FD_ISSET(0, &read_fds)) {
          int fd_envia = open(MANAGER_FIFO, O_WRONLY);
          if (fd_envia == -1) {
             printf("Erro ao abrir o FIFO do servidor");
@@ -146,12 +42,6 @@ int main(int argc, char *argv[]) {
                unlink(CLIENT_FIFO_FINAL);
                return 2;
             }
-            if(contentor.tipo == 6){
-               printf("\nA encerrar cliente...\n");
-               fflush(stdout);
-               flag = 1;
-               sleep(2);
-            }
          }
       }
 
@@ -182,10 +72,10 @@ int main(int argc, char *argv[]) {
                fflush(stdout);
             }
             else if(contentor.tipo == 6){
-               printf("\nManager encerrado. A encerrar cliente...\n");
+               printf("\nA encerrar cliente...\n");
                fflush(stdout);
                flag = 1;
-               sleep(1);
+               sleep(2);
             }
             else if(contentor.tipo == 7){ //outro cliente desconectou se
                printf("%s", contentor.msg_devolucao);
@@ -196,11 +86,3 @@ int main(int argc, char *argv[]) {
             }
          }
       }
-
-
-   } while (flag == 0);
-
-   close(fd_recebe); 
-   unlink(CLIENT_FIFO_FINAL);  
-   return 0;
-}
