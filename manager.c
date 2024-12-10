@@ -55,6 +55,7 @@ typedef struct {
 #define MAX_TOPICOS 20
 #define MAX_CLIENTES 10
 
+
 typedef struct {
    Topico topicos[MAX_TOPICOS];
    int numTopicos;
@@ -86,7 +87,7 @@ void* processaNamedPipes(void* aux) {
 	 int size;
 
     while (serverData->lock == 0) {
-        size = read(fd_recebe, &contentor, sizeof(contentor));
+        size = read(serverData->fd, &contentor, sizeof(contentor));
         
         if (size > 0) {
             if (contentor.tipo == 1) {
@@ -128,7 +129,7 @@ void* processaNamedPipes(void* aux) {
         }
     }
 
-    close(fd_recebe);
+    close(serverData->fd);
     unlink(MANAGER_FIFO);
     return NULL;
 }
@@ -144,7 +145,7 @@ void* descontaTempo(void *aux){
             for (j = 0; j < serverData->topicos[i].numPersistentes; j++){
                serverData->topicos[i].tempo[j]--;
                if (serverData->topicos[i].tempo[j] == 0){
-                  for (k=j; k < serverData->topicos[i].numPersistentes; k++){
+                  for (k=j; k < 4; k++){
                      serverData->topicos[i].tempo[k] = serverData->topicos[i].tempo[k+1];
                      strcpy(serverData->topicos[i].msg_persistentes[k], serverData->topicos[i].msg_persistentes[k+1]);
                      strcpy(serverData->topicos[i].usernames[k], serverData->topicos[i].usernames[k+1]);
@@ -161,10 +162,6 @@ void* descontaTempo(void *aux){
    }
 }
 
-void* descontaTempo(void *aux){
-   ServerData *serverData = (ServerData *) aux;
-   int fd = 
-}
 
 int main() {
     pthread_mutex_t mutex; 
@@ -174,12 +171,19 @@ int main() {
     serverData.m = &mutex;
     pthread_t thr_pipes, thr_tempo, thr_alive;
 
+    for (int i = 0; i < MAX_TOPICOS; i++) {
+      for (int j = 0; j < 5; j++) {
+         strcpy(serverData.topicos[i].msg_persistentes[j], "\0");
+         strcpy(serverData.topicos[i].usernames[j], "\0");
+         serverData.topicos[i].tempo[j] = 0;
+      }
+   }
+
     struct sigaction sa;
     sa.sa_handler = handler_sigalrm;
     sa.sa_flags = SA_RESTART;
     sigaction(SIGINT, &sa, NULL);
 
-// && errno != EEXIST
     if (mkfifo(MANAGER_FIFO, 0666) == -1) {
         perror("Erro ao criar FIFO do manager");
         return 1;
@@ -201,10 +205,11 @@ int main() {
         perror("Erro ao criar thread");
         return 1;
     }
+    /*
     if (pthread_create(&thr_alive, NULL, verificaClientes, &serverData) != 0) {
         perror("Erro ao criar thread");
         return 1;
-    }
+    }*/
 
     char buffer[50];
     char username[20];
@@ -454,32 +459,44 @@ void subscreveCliente(TUDOJUNTO* container, Topico* topicos, ServerData* serverD
    } 
 }
 
-void guardaPersistentes(TUDOJUNTO* container, ServerData* ServerData){
-   int free_slot = -1;
-   int index = -1;
-   if(container->duracao > 0){
-      //percorrer o topico para verificar se ainda tenho espaco livre para adicionar mensagem persistente
-      for (int i = 0; i < ServerData->numTopicos; i++){
-         if(strcmp(ServerData->topicos[i].nome_topico, container->topico) == 0){
-            index = i;
-            for (int j = 0; j < 5; j++){
-               if (strcmp(ServerData->topicos[i].msg_persistentes[j], "\0") == 0){
-                  free_slot = j;
-                  break;
-               }
+void guardaPersistentes(TUDOJUNTO* container, ServerData* ServerData) {
+    int free_slot = -1;
+    int index = -1;
+
+    if (container->duracao > 0) {
+        // Percorrer os tópicos
+        for (int i = 0; i < ServerData->numTopicos; i++) {
+            if (ServerData->topicos[i].numPersistentes < 5) {
+                if (strcmp(ServerData->topicos[i].nome_topico, container->topico) == 0) {
+                    index = i;
+                    // Encontrar slot livre
+                    for (int j = 0; j < 5; j++) {
+                        if (ServerData->topicos[i].msg_persistentes[j][0] == '\0') {
+                            free_slot = j;
+                            break;
+                        }
+                    }
+                    break;
+                }
             }
-            if(free_slot == -1 || index == -1){printf("\nSEM ESPACO PARA MSG PERSISTENTE OU TOPICO N ENCONTRAADO!");}
-            break;
-         }
-      }
-      pthread_mutex_lock(ServerData->m);
-      strcpy(ServerData->topicos[index].msg_persistentes[free_slot], container->mensagem);
-      strcpy(ServerData->topicos[index].usernames[free_slot], container->username);
-      ServerData->topicos[index].tempo[free_slot] = container->duracao;
-      ServerData->topicos[index].numPersistentes++;
-      pthread_mutex_unlock(ServerData->m);
-   }
+        }
+
+        if (free_slot == -1 || index == -1) {
+            printf("\nSEM ESPACO PARA MSG PERSISTENTE OU TOPICO NAO ENCONTRADO!");
+            return;
+        }
+
+        pthread_mutex_lock(ServerData->m);
+        strcpy(ServerData->topicos[index].msg_persistentes[free_slot], container->mensagem);
+        strcpy(ServerData->topicos[index].usernames[free_slot], container->username);
+        ServerData->topicos[index].tempo[free_slot] = container->duracao;
+        ServerData->topicos[index].numPersistentes++;
+        pthread_mutex_unlock(ServerData->m);
+    } else {
+        printf("\nDURACAO INVALIDA!");
+    }
 }
+
 
 
 void distribuiMensagem(TUDOJUNTO* container, ServerData* serverData) {
@@ -527,6 +544,8 @@ void apagaUsername(char username[20], ServerData* serverData, Topico* topicos) {
                 strcpy(serverData->usernames[j], serverData->usernames[j + 1]);
                 serverData->pids[j] = serverData->pids[j + 1];
             }
+            strcpy(serverData->usernames[9], "\0");
+            serverData->pids[9] = 0;
             serverData->numCli--;
             break;
         }
