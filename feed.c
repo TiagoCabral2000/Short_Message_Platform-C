@@ -125,7 +125,7 @@ int main(int argc, char *argv[]) {
          // Handle SIGINT gracefully
          int fd_envia = open(MANAGER_FIFO, O_WRONLY);
          if (fd_envia != -1) {
-            id.tipo = 10; // Indicate shutdown
+            id.tipo = 7; // Indicate shutdown
             if (write(fd_envia, &id, sizeof(id)) == -1) {
                printf("Erro ao escrever no FIFO do servidor\n");
             }
@@ -261,21 +261,21 @@ int main(int argc, char *argv[]) {
                   fflush(stdout);
                   break;
                } 
-               case 4: {
+               case 3: {
                   FEEDBACK feedback;
                   read(fd_recebe, &feedback, sizeof(feedback));
                   printf("\n%s", feedback.msg_devolucao);
                   fflush(stdout);
                   break;
                }
-               case 6:{
+               case 4:{
                   printf("\nManager encerrado. A encerrar cliente...\n");
                   fflush(stdout);
                   flag = 1;
                   sleep(1);
                   break;
                }
-               case 7:{
+               case 5:{
                   printf("\nRemovido pelo administrador. A encerrar cliente...\n");
                   fflush(stdout);
                   flag = 1;

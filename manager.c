@@ -40,28 +40,6 @@ typedef struct{
    int pid;
 } SUBSCRIBE;
 
-//thread para ir verificando se esta vivo o cliente
-
-// read (fd,&tipo,sizeof(tipo);
-// if tipo == 1
-//   read (fd,&login,ds)
-
-
-// typedef struct {
-//     int tipo; //1
-//     LOGIN login;
-// } env1;
-
-// typedef struct {
-//     int tipo;
-//     MSG msg;
-// } env2;
-
-// typedef struct {
-//     int tipo;
-//    ;
-// } env1;
-
 typedef struct {
     char nome_topico[20];
     int pid_clientes[10];
@@ -127,24 +105,21 @@ void* processaNamedPipes(void* aux) {
         if (size > 0) {
          switch(id.tipo){
             case 1: {
-               printf("\nTipo == 1\n");
                LOGIN login;
                read(serverData->fd, &login, sizeof(login));
                novoLogin(&login, serverData);
                break;
             } 
             case 2: {
-               printf("\nTipo == 2\n");
                MSG msg;
                SUBSCRIBE sub = {0};
                read(serverData->fd, &msg, sizeof(msg));
                flag1 = analisaTopico(&msg, serverData);
-               printf("\nFLAG 1 == %d\n", flag1);
+
                if (flag1 == 0){
                   flag2 = guardaPersistentes(&msg, serverData);
-                  printf("\nFLAG 2 == %d\n", flag2);
+                  
                   if (flag2 == 0){
-                     printf("\nENTROU AQUI\n");
                      subscreveCliente(&msg, &id, &sub, serverData);
                      distribuiMensagem(&msg, serverData);
                   }
@@ -152,13 +127,11 @@ void* processaNamedPipes(void* aux) {
                break;
             } 
             case 3: {
-               printf("\nTipo == 3\n");
                char nome[20] = "\0";
                mostraTopicos(serverData, nome);
                break;
             }
             case 4: {
-               printf("\nTipo == 4\n");
                MSG msg = {0};
                SUBSCRIBE sub;
                read(serverData->fd, &sub, sizeof(sub));
@@ -176,12 +149,14 @@ void* processaNamedPipes(void* aux) {
                read(serverData->fd, &login, sizeof(login));
                int flag = 0;
                apagaUsername(login.username, serverData, flag);
+               break;
 				}
-            case 10: {
+            case 7: {
                LOGIN login;
                read(serverData->fd, &login, sizeof(login));
                int flag = 1;
                apagaUsername(login.username, serverData, flag);
+               break;
             }
 				default:
 					printf("\nTipo n existe");
@@ -469,7 +444,7 @@ int analisaTopico(MSG* msg, ServerData *serverdata) {
     }
 
       if(envia_msg == 1){
-         id.tipo = 4;
+         id.tipo = 3;
          sprintf(CLIENT_FIFO_FINAL, CLIENT_FIFO, msg->pid);
 
          int fd_envia = open(CLIENT_FIFO_FINAL, O_WRONLY);
@@ -486,7 +461,7 @@ int analisaTopico(MSG* msg, ServerData *serverdata) {
 }
 
 void subscreveCliente(MSG* msg, IDENTIFICADOR* id, SUBSCRIBE* sub, ServerData* serverData) {
-   int found = -1; 
+   int found; 
    int alreadySubscribed = -1; 
    int fd_envia;
    int index = -1;
@@ -497,6 +472,7 @@ void subscreveCliente(MSG* msg, IDENTIFICADOR* id, SUBSCRIBE* sub, ServerData* s
    FEEDBACK feedback;
 
    if (id->tipo == 2){
+      found = -1;
       PID = msg->pid;
       strcpy(utilizador, msg->username);
       for (int i = 0; i < 20; i++) {
@@ -533,8 +509,8 @@ void subscreveCliente(MSG* msg, IDENTIFICADOR* id, SUBSCRIBE* sub, ServerData* s
    else if(id->tipo == 4){
       PID = sub->pid;
       strcpy(utilizador, sub->username);
+      found = -1;
       for (int i = 0; i < 20; i++) {
-   
          if (strcmp(serverData->topicos[i].nome_topico, sub->topico) == 0) {
             found = 1; 
             index = i;
@@ -563,18 +539,19 @@ void subscreveCliente(MSG* msg, IDENTIFICADOR* id, SUBSCRIBE* sub, ServerData* s
                   envia_feedback = 1;
                }
             }
+            break;
          }
       }
    }
 
-   if (found == 0){
+   if (found != 1){
       strcpy(feedback.msg_devolucao, "Topico nao encontrado");
       envia_feedback = 1;
    }
 
    if (envia_feedback == 1){ //Se o comando foi subscribe
       sprintf(CLIENT_FIFO_FINAL, CLIENT_FIFO, PID);
-      id->tipo = 4;
+      id->tipo = 3;
       fd_envia = open(CLIENT_FIFO_FINAL, O_WRONLY);
       if (fd_envia != -1) {
          write(fd_envia, id, sizeof(*id)); 
@@ -663,7 +640,7 @@ int guardaPersistentes(MSG* msg, ServerData* ServerData){
     } 
 
     if (envia_feedback == 1){
-      id.tipo = 4;
+      id.tipo = 3;
       strcpy(feedback.msg_devolucao, "Limite de mensagens persistentes atingido!");
       sprintf(CLIENT_FIFO_FINAL, CLIENT_FIFO, msg->pid);
 
@@ -726,9 +703,8 @@ void apagaUsername(char username[20], ServerData* serverData, int flag) {
             serverData->pids[index] = 0;
 
             if (flag == 0){ //so se tiver a terminar ordeiramente
-               id.tipo = 7;
+               id.tipo = 5;
                sprintf(CLIENT_FIFO_FINAL, CLIENT_FIFO, pid);
-               printf("\n%s\n",CLIENT_FIFO_FINAL);
                fd_envia = open(CLIENT_FIFO_FINAL, O_WRONLY);
                if (fd_envia != -1) {
                   if (write(fd_envia, &id, sizeof(id)) == -1) {
@@ -766,7 +742,7 @@ void apagaUsername(char username[20], ServerData* serverData, int flag) {
   
     for (int i = 0; i < serverData->numCli; i++) {
         if (serverData->pids[i] > 0) {
-         id.tipo = 4;
+         id.tipo = 3;
             snprintf(feedback.msg_devolucao, sizeof(feedback.msg_devolucao), "\nCliente [%s] desconectado!\n", nome);
             sprintf(CLIENT_FIFO_FINAL, CLIENT_FIFO, serverData->pids[i]);
 
@@ -812,12 +788,12 @@ void unsubscribe(SUBSCRIBE* sub, ServerData* ServerData){
       }
    }
    if (alreadySubscribed == 0){
-      id.tipo = 4;
+      id.tipo = 3;
       strcpy(feedback.msg_devolucao, "Nao estava subscrito no topico!");
 
    }
    else{
-      id.tipo = 4;
+      id.tipo = 3;
       strcpy(feedback.msg_devolucao, "Subscricao retirada com sucesso!");
    }
 
@@ -843,7 +819,7 @@ void encerraTodosClientes(ServerData* serverData){
    IDENTIFICADOR id;
    for (int i = 0; i < serverData->numCli; i++) {
         if (serverData->pids[i] > 0) {
-         id.tipo = 6;
+         id.tipo = 4;
             sprintf(CLIENT_FIFO_FINAL, CLIENT_FIFO, serverData->pids[i]);
 
             fd_envia = open(CLIENT_FIFO_FINAL, O_WRONLY);
