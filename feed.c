@@ -15,9 +15,30 @@
 char CLIENT_FIFO_FINAL[100];
 
 typedef struct {
-   int tipo, pid, resultado, duracao;
-   char username[20], topico[20], mensagem[300], msg_devolucao[50]; 
-} TUDOJUNTO;
+    int tipo; 
+} IDENTIFICADOR;
+
+typedef struct {
+    int pid;
+    char username[20];
+} LOGIN;
+
+typedef struct {
+    int duracao, pid;
+    char topico[20], username[20], mensagem[300];
+} MSG;
+
+typedef struct{
+   char topico[20], username[20];
+   int pid;
+} SUBSCRIBE;
+
+
+typedef struct {
+    int resultado;
+    char msg_devolucao[50];
+} FEEDBACK;
+
 
 int sigint_received = 0;
 
@@ -31,11 +52,6 @@ int main(int argc, char *argv[]) {
       return 0;
    }
 
-   TUDOJUNTO contentor;
-   contentor.tipo = 1;
-   contentor.pid = getpid();
-   strcpy(contentor.username, argv[1]);
-
    struct sigaction sa;
    sa.sa_handler = handler_sigint; // Use simpler handler
    sa.sa_flags = SA_RESTART;
@@ -44,8 +60,20 @@ int main(int argc, char *argv[]) {
    fd_set read_fds;
    int nfd;
 
-   // PREENCHE CLIENT_FIFO
-   sprintf(CLIENT_FIFO_FINAL, CLIENT_FIFO, contentor.pid);
+
+   //---------------------------------
+   IDENTIFICADOR id;
+   id.tipo = 1;
+   LOGIN login;
+   login.pid = getpid();
+   strcpy(login.username, argv[1]);
+
+   //FEEDBACK feedback;
+   MSG msg;
+   SUBSCRIBE sub;
+   //---------------------------------
+
+   sprintf(CLIENT_FIFO_FINAL, CLIENT_FIFO, getpid());
    if (mkfifo(CLIENT_FIFO_FINAL, 0666) == -1) {
       if (errno != EEXIST) {
          printf("Erro ao criar FIFO do cliente\n");
@@ -60,14 +88,23 @@ int main(int argc, char *argv[]) {
       return 1;
    }
 
-   // ENVIA LOGIN PARA O MANAGER
-   if (write(fd_envia, &contentor, sizeof(contentor)) == -1) {
+   //-------------------------------
+   if (write(fd_envia, &id, sizeof(id)) == -1) {
       printf("Erro ao escrever no FIFO do servidor\n");
       close(fd_envia);
       unlink(CLIENT_FIFO_FINAL);
       return 2;
    }
-   close(fd_envia);
+
+   if (write(fd_envia, &login, sizeof(login)) == -1) {
+      printf("Erro ao escrever no FIFO do servidor\n");
+      close(fd_envia);
+      unlink(CLIENT_FIFO_FINAL);
+      return 2;
+   }
+
+   //-------------------------------
+
 
    // CLIENTE ABRE O SEU NAMED PIPE PARA LEITURA
    int fd_recebe = open(CLIENT_FIFO_FINAL, O_RDWR);
@@ -84,16 +121,15 @@ int main(int argc, char *argv[]) {
       FD_SET(fd_recebe, &read_fds);
       nfd = select(fd_recebe + 1, &read_fds, NULL, NULL, NULL);
 
-      contentor.pid = getpid();
-      strcpy(contentor.username, argv[1]);
-
-
       if (sigint_received) {
          // Handle SIGINT gracefully
          int fd_envia = open(MANAGER_FIFO, O_WRONLY);
          if (fd_envia != -1) {
-            contentor.tipo = 6; // Indicate shutdown
-            if (write(fd_envia, &contentor, sizeof(contentor)) == -1) {
+            id.tipo = 6; // Indicate shutdown
+            if (write(fd_envia, &id, sizeof(id)) == -1) {
+               printf("Erro ao escrever no FIFO do servidor\n");
+            }
+            if (write(fd_envia, &login, sizeof(login)) == -1) {
                printf("Erro ao escrever no FIFO do servidor\n");
             }
             close(fd_recebe); 
@@ -115,90 +151,141 @@ int main(int argc, char *argv[]) {
          }
          char buffer[350]; 
          if (fgets(buffer, sizeof(buffer), stdin)) {
-            // Remove o '\n' do final da string (se houver)
-            buffer[strcspn(buffer, "\n")] = 0;
+            buffer[strcspn(buffer, "\n")] = 0;// Remove o '\n' do final da string se houver
 
-            if (sscanf(buffer, "msg %19s %d %[^\n]s", contentor.topico, &contentor.duracao, contentor.mensagem) == 3) {
-               contentor.tipo = 2; // Enviar mensagem para tópico
+            if (sscanf(buffer, "msg %19s %d %[^\n]s", msg.topico, &msg.duracao, msg.mensagem) == 3) {
+               id.tipo = 2;
+               msg.pid = getpid();
+               strcpy(msg.username, argv[1]);
+               if (write(fd_envia, &id, sizeof(id)) == -1) {
+                  printf("Erro ao escrever no FIFO do servidor\n");
+                  close(fd_envia);
+                  unlink(CLIENT_FIFO_FINAL);
+                  return 2;
+               }
+               if (write(fd_envia, &msg, sizeof(msg)) == -1) {
+                  printf("Erro ao escrever no FIFO do servidor\n");
+                  close(fd_envia);
+                  unlink(CLIENT_FIFO_FINAL);
+                  return 2;
+               }
             } 
             else if (strcmp(buffer, "topics") == 0) {
-               contentor.tipo = 3; // Solicitação de listagem de tópicos
+               id.tipo = 3;
+               if (write(fd_envia, &id, sizeof(id)) == -1) {
+                  printf("Erro ao escrever no FIFO do servidor\n");
+                  close(fd_envia);
+                  unlink(CLIENT_FIFO_FINAL);
+                  return 2;
+               }
             } 
-            else if (sscanf(buffer, "subscribe %19s", contentor.topico) == 1) {
-               contentor.pid = getpid();
-               contentor.tipo = 4; // Subscrever a um tópico
+            else if (sscanf(buffer, "subscribe %19s", sub.topico) == 1) {
+               sub.pid = getpid();
+               id.tipo = 4;
+               if (write(fd_envia, &id, sizeof(id)) == -1) {
+                  printf("Erro ao escrever no FIFO do servidor\n");
+                  close(fd_envia);
+                  unlink(CLIENT_FIFO_FINAL);
+                  return 2;
+               }
+               if (write(fd_envia, &sub, sizeof(sub)) == -1) {
+                  printf("Erro ao escrever no FIFO do servidor\n");
+                  close(fd_envia);
+                  unlink(CLIENT_FIFO_FINAL);
+                  return 2;
+               }
             } 
-            else if (sscanf(buffer, "unsubscribe %19s", contentor.topico) == 1) {
-               contentor.pid = getpid();
-               contentor.tipo = 5; // Deixar de subscrever um tópico
+            else if (sscanf(buffer, "unsubscribe %19s", sub.topico) == 1) {
+               id.tipo = 5; 
+               sub.pid = getpid();
+               if (write(fd_envia, &id, sizeof(id)) == -1) {
+                  printf("Erro ao escrever no FIFO do servidor\n");
+                  close(fd_envia);
+                  unlink(CLIENT_FIFO_FINAL);
+                  return 2;
+               }
+               if (write(fd_envia, &sub, sizeof(sub)) == -1) {
+                  printf("Erro ao escrever no FIFO do servidor\n");
+                  close(fd_envia);
+                  unlink(CLIENT_FIFO_FINAL);
+                  return 2;
+               }
             } 
             else if (strcmp(buffer, "exit") == 0) {
-               contentor.tipo = 6; //fechar 
-            } 
-            else {
-               printf("Comando inválido. Tente novamente.\n");
-               continue;
-            }
-
-            if (write(fd_envia, &contentor, sizeof(contentor)) == -1) {
-               printf("Erro ao escrever no FIFO do servidor\n");
-               close(fd_envia);
-               unlink(CLIENT_FIFO_FINAL);
-               return 2;
-            }
-            if(contentor.tipo == 6){
+               id.tipo = 6; 
+               if (write(fd_envia, &id, sizeof(id)) == -1) {
+                  printf("Erro ao escrever no FIFO do servidor\n");
+                  close(fd_envia);
+                  unlink(CLIENT_FIFO_FINAL);
+                  return 2;
+               }
+               if (write(fd_envia, &login, sizeof(login)) == -1) { //info necessaria para saber qual remover
+                  printf("Erro ao escrever no FIFO do servidor\n");
+                  close(fd_envia);
+                  unlink(CLIENT_FIFO_FINAL);
+                  return 2;
+               }
                printf("\nA encerrar cliente...\n");
                fflush(stdout);
                flag = 1;
                sleep(2);
+            } 
+            else {
+               printf("Comando inválido. Tente novamente.\n");
+               continue;
             }
          }
       }
 
       //Escuta named pipe 
       else if(FD_ISSET(fd_recebe, &read_fds)){
-         int size = read(fd_recebe, &contentor, sizeof(contentor));
+         int size = read(fd_recebe, &id, sizeof(id));
          if (size > 0) {
-            if (contentor.tipo == 1){
-               printf("%s", contentor.msg_devolucao); 
-               if(contentor.resultado == 0){ //Nao deu para registar
-                  close(fd_recebe); 
-                  close(fd_envia);  
-                  unlink(CLIENT_FIFO_FINAL);
-                  return 0;
+            switch(id.tipo){
+               case 1:{
+                  FEEDBACK feedback;
+                  read(fd_recebe, &feedback, sizeof(feedback));
+                  printf("%s", feedback.msg_devolucao); 
+                  if(feedback.resultado == 0){ 
+                     close(fd_recebe); 
+                     close(fd_envia);  
+                     unlink(CLIENT_FIFO_FINAL);
+                     return 0;
+                  }
+                  break;
                }
-            }
-            else if (contentor.tipo == 2){
-               printf("\nNova mensagem! user:[%s] topico:[%s] msg:[%s]", contentor.username, contentor.topico, contentor.mensagem);
-               if(contentor.resultado == 0){
-                  close(fd_recebe); 
-                  close(fd_envia);  
-                  unlink(CLIENT_FIFO_FINAL);
-                  return 0;
+               case 2:{
+                  MSG msg;
+                  read(fd_recebe, &msg, sizeof(msg));
+                  printf("\nNova mensagem! user:[%s] topico:[%s] msg:[%s]", msg.username, msg.topico, msg.mensagem);
+                  fflush(stdout);
+                  break;
+               } 
+               case 4: {
+                  FEEDBACK feedback;
+                  read(fd_recebe, &feedback, sizeof(feedback));
+                  printf("\n%s", feedback.msg_devolucao);
+                  fflush(stdout);
+                  break;
                }
-            } 
-            else if (contentor.tipo == 4){
-               printf("\n%s", contentor.msg_devolucao);
-               fflush(stdout);
-            }
-            else if(contentor.tipo == 6){
-               printf("\nManager encerrado. A encerrar cliente...\n");
-               fflush(stdout);
-               flag = 1;
-               sleep(1);
-            }
-            else if(contentor.tipo == 7){ //outro cliente desconectou se
-               printf("%s", contentor.msg_devolucao);
-               fflush(stdout);
-            }
-            else if (contentor.tipo == 8){
-               write(fd_envia, &contentor, sizeof(contentor));
+               case 6:{
+                  printf("\nManager encerrado. A encerrar cliente...\n");
+                  fflush(stdout);
+                  flag = 1;
+                  sleep(1);
+                  break;
+               }
+               case 7:{
+                  printf("\nRemovido pelo administrador. A encerrar cliente...\n");
+                  fflush(stdout);
+                  flag = 1;
+                  sleep(1);
+                  break;
+               }
             }
          }
          printf("\n");
       }
-
-
    } while (flag == 0);
 
    close(fd_recebe); 
