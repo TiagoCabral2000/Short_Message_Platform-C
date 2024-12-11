@@ -122,7 +122,7 @@ int main(int argc, char *argv[]) {
             unlink(CLIENT_FIFO_FINAL);
             printf("A encerrar cliente...\n");
             fflush(stdout);
-            sleep(2);
+            sleep(1);
             return 0;
          }  
       }
@@ -212,7 +212,7 @@ int main(int argc, char *argv[]) {
                printf("\nA encerrar cliente...\n");
                fflush(stdout);
                flag = 1;
-               sleep(2);
+               sleep(1);
             } 
             else {
                printf("Comando inválido. Tente novamente.\n");

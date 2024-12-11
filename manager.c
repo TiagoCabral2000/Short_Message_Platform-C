@@ -310,12 +310,11 @@ int main() {
                kill(getpid(), SIGINT);
                break;
             }
+            else {
+               printf("Comando inválido. Tente novamente.\n");
+               continue;
+            }
          } 
-         else {
-            printf("Comando inválido. Tente novamente.\n");
-            continue;
-         }
-
    }
 
    pthread_join(thr_pipes, NULL);
@@ -653,18 +652,19 @@ void distribuiMensagem(MSG* msg, ServerData* serverData) {
 
 void apagaUsername(char username[20], ServerData* serverData, int flag) {
    int pid = -1;
+   int found = 0;
 	int index;
 	int fd_envia;
    char nome[20];
    strcpy(nome, username);
    IDENTIFICADOR id;
    FEEDBACK feedback;
-
-   printf("Remover %s...\n", nome);
-   fflush(stdout);
     
     for (index = 0; index < MAX_CLIENTES; index++) {
         if (strcmp(serverData->usernames[index], username) == 0) {
+            found = 1;
+            printf("Remover %s...\n", nome);
+            fflush(stdout);
             pid = serverData->pids[index];
             strcpy(serverData->usernames[index],"\0");
             serverData->pids[index] = 0;
@@ -695,7 +695,11 @@ void apagaUsername(char username[20], ServerData* serverData, int flag) {
         }
     }
 
-    for (int i = 0; i < MAX_TOPICOS; i++) {
+    if (found == 0){
+      printf("\nUsername nao esta registado!\n");
+    }
+    else{
+      for (int i = 0; i < MAX_TOPICOS; i++) {
         for (int j = 0; j < serverData->topicos[i].numClientes; j++) {
             if (serverData->topicos[i].pid_clientes[j] == pid) {
                 for (int k = j; k < serverData->topicos[i].numClientes - 1; k++) {
@@ -705,32 +709,33 @@ void apagaUsername(char username[20], ServerData* serverData, int flag) {
                 break;
             }
         }
+      }
+   
+      for (int i = 0; i < serverData->numCli; i++) {
+         if (serverData->pids[i] > 0) {
+            id.tipo = 3;
+               snprintf(feedback.msg_devolucao, sizeof(feedback.msg_devolucao), "\nCliente [%s] desconectado!\n", nome);
+               sprintf(CLIENT_FIFO_FINAL, CLIENT_FIFO, serverData->pids[i]);
+
+               fd_envia = open(CLIENT_FIFO_FINAL, O_WRONLY);
+               if (fd_envia != -1) {
+                  if (write(fd_envia, &id, sizeof(id)) == -1) {
+                     printf("Falha a escrever ao cliente");
+                  }
+
+                  if (write(fd_envia, &feedback, sizeof(feedback)) == -1) {
+                     printf("Falha a escrever ao cliente");
+                  }
+                  close(fd_envia);
+               } 
+               else {
+                  printf("Falha a abrir o pipe para escrita");
+               }
+         }
+      
+      }
+
     }
-  
-    for (int i = 0; i < serverData->numCli; i++) {
-        if (serverData->pids[i] > 0) {
-         id.tipo = 3;
-            snprintf(feedback.msg_devolucao, sizeof(feedback.msg_devolucao), "\nCliente [%s] desconectado!\n", nome);
-            sprintf(CLIENT_FIFO_FINAL, CLIENT_FIFO, serverData->pids[i]);
-
-            fd_envia = open(CLIENT_FIFO_FINAL, O_WRONLY);
-            if (fd_envia != -1) {
-               if (write(fd_envia, &id, sizeof(id)) == -1) {
-                    printf("Falha a escrever ao cliente");
-                }
-
-                if (write(fd_envia, &feedback, sizeof(feedback)) == -1) {
-                    printf("Falha a escrever ao cliente");
-                }
-                close(fd_envia);
-            } 
-            else {
-                printf("Falha a abrir o pipe para escrita");
-            }
-        }
-    
-   }
-
 }
 
 void unsubscribe(SUBSCRIBE* sub, ServerData* ServerData){
