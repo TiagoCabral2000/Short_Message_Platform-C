@@ -8,37 +8,11 @@
 #include <signal.h>
 #include <errno.h>
 #include <pthread.h>
+#include "estruturas.h"
 
 #define MANAGER_FIFO "MANAGER_FIFO"
 #define CLIENT_FIFO "CLIENT_FIFO%d"
 char CLIENT_FIFO_FINAL[100];
-
-
-
-
-typedef struct {
-    int tipo; 
-} IDENTIFICADOR;
-
-typedef struct {
-    int pid;
-    char username[20];
-} LOGIN;
-
-typedef struct {
-    int resultado;
-    char msg_devolucao[50];
-} FEEDBACK;
-
-typedef struct {
-    int duracao, pid;
-    char topico[20], username[20], mensagem[300];
-} MSG;
-
-typedef struct{
-   char topico[20], username[20];
-   int pid;
-} SUBSCRIBE;
 
 typedef struct {
     char nome_topico[20];
@@ -53,7 +27,6 @@ typedef struct {
 
 #define MAX_TOPICOS 20
 #define MAX_CLIENTES 10
-
 
 typedef struct {
    Topico topicos[MAX_TOPICOS];
@@ -87,7 +60,6 @@ void handler_sigalrm(int s, siginfo_t *info, void *context) {
     if (global_server_data != NULL) {
         guardaPersistentesFicheiro(global_server_data); // Save the data
     }
-    
     unlink(MANAGER_FIFO);
     printf("\nServidor encerrado\n");
     exit(1);
@@ -118,7 +90,7 @@ void* processaNamedPipes(void* aux) {
 
                if (flag1 == 0){
                   flag2 = guardaPersistentes(&msg, serverData);
-                  
+
                   if (flag2 == 0){
                      subscreveCliente(&msg, &id, &sub, serverData);
                      distribuiMensagem(&msg, serverData);
@@ -261,8 +233,7 @@ int main() {
     if (pthread_create(&thr_tempo, NULL, descontaTempo, &serverData) != 0) {
         perror("Erro ao criar thread");
         return 1;
-    }
-    
+    } 
     if (pthread_create(&thr_gestaoTopicos, NULL, gereTopicos, &serverData) != 0) {
         perror("Erro ao criar thread");
         return 1;
@@ -274,7 +245,7 @@ int main() {
     while (1) {
         
         if (fgets(buffer, sizeof(buffer), stdin)) {
-            // Remove o '\n' do final da string (se houver)
+            // Remove o '\n' do final da string se houver
             buffer[strcspn(buffer, "\n")] = 0;
 
             if (sscanf(buffer, "remove %19s", username) == 1) {
@@ -303,7 +274,6 @@ int main() {
                   printf("\nTopico %s nao encontrado!\n", nomeTopico);
                }
             } 
-
             else if (sscanf(buffer, "unlock %19s", nomeTopico) == 1) {
                int found = 0;
                for (int i = 0; i < serverData.numTopicos; i++){
@@ -319,15 +289,6 @@ int main() {
                   printf("\nTopico %s nao encontrado!\n", nomeTopico);
                }
             } 
-
-            else if (strcmp(buffer, "close") == 0) {
-               serverData.lock = 1;
-               guardaPersistentesFicheiro(&serverData);
-               
-               encerraTodosClientes(&serverData);
-               kill(getpid(), SIGINT);
-               break;
-            }
             else if (strcmp(buffer, "users") == 0) {
                printf("*********************************");
                printf("\n -> Numero clientes ativos = %d", serverData.numCli);
@@ -342,6 +303,12 @@ int main() {
                }
                printf("\n*********************************\n");
 
+            }
+            else if (strcmp(buffer, "close") == 0) {
+               serverData.lock = 1;           
+               encerraTodosClientes(&serverData);
+               kill(getpid(), SIGINT);
+               break;
             }
          } 
          else {
@@ -837,7 +804,6 @@ void encerraTodosClientes(ServerData* serverData){
    }
 }
 
-
 void guardaPersistentesFicheiro(ServerData* serverData) {
     char *nome_ficheiro = getenv("MSG_FICH");
     if (nome_ficheiro == NULL) {
@@ -860,9 +826,7 @@ void guardaPersistentesFicheiro(ServerData* serverData) {
                     serverData->topicos[i].tempo[j],
                     serverData->topicos[i].msg_persistentes[j]);
         }
-
-      }
-        
+      }    
     }
     fclose(f);
     printf("Mensagens persistentes guardadas em %s.\n", nome_ficheiro);
@@ -889,24 +853,20 @@ void recuperaPersistentesFicheiro(ServerData* serverData) {
         int tempo_vida;
         char corpo_mensagem[300];
 
-        // Processar a linha manualmente
         char *ptr = linha;
 
-        // Extrair <nome do tópico>
         char *espaco = strchr(ptr, ' ');
         if (espaco == NULL) continue; // Linha mal formatada
         *espaco = '\0';
         strncpy(nome_topico, ptr, sizeof(nome_topico));
         ptr = espaco + 1;
 
-        // Extrair <username>
         espaco = strchr(ptr, ' ');
         if (espaco == NULL) continue;
         *espaco = '\0';
         strncpy(username, ptr, sizeof(username));
         ptr = espaco + 1;
 
-        // Extrair <tempo de vida>
         espaco = strchr(ptr, ' ');
         if (espaco == NULL) continue;
         *espaco = '\0';
@@ -917,7 +877,6 @@ void recuperaPersistentesFicheiro(ServerData* serverData) {
         strncpy(corpo_mensagem, ptr, sizeof(corpo_mensagem));
         corpo_mensagem[strcspn(corpo_mensagem, "\n")] = '\0'; // Remover o '\n'
 
-        // Adicionar a mensagem ao serverData
         int topico_index = -1;
         for (int i = 0; i < serverData->numTopicos; i++) {
             if (strcmp(serverData->topicos[i].nome_topico, nome_topico) == 0) {
@@ -926,14 +885,12 @@ void recuperaPersistentesFicheiro(ServerData* serverData) {
             }
         }
 
-        // Se o tópico não existir, criar um novo
         if (topico_index == -1 && serverData->numTopicos < MAX_TOPICOS) {
             topico_index = serverData->numTopicos++;
             strncpy(serverData->topicos[topico_index].nome_topico, nome_topico, sizeof(serverData->topicos[topico_index].nome_topico));
             serverData->topicos[topico_index].numPersistentes = 0;
         }
 
-        // Adicionar a mensagem ao tópico encontrado/criado
         if (topico_index != -1) {
             int mensagem_index = serverData->topicos[topico_index].numPersistentes;
             if (mensagem_index < 300) {
@@ -986,7 +943,6 @@ void mostraTopicos(ServerData* serverData, char nomeTopico[20]){
       }
 
    }
-
 }
 
 

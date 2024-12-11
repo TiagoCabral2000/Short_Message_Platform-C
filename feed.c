@@ -13,37 +13,17 @@
 #define MANAGER_FIFO "MANAGER_FIFO"
 #define CLIENT_FIFO "CLIENT_FIFO%d"
 char CLIENT_FIFO_FINAL[100];
-
-typedef struct {
-    int tipo; 
-} IDENTIFICADOR;
-
-typedef struct {
-    int pid;
-    char username[20];
-} LOGIN;
-
-typedef struct {
-    int duracao, pid;
-    char topico[20], username[20], mensagem[300];
-} MSG;
-
-typedef struct{
-   char topico[20], username[20];
-   int pid;
-} SUBSCRIBE;
-
-
-typedef struct {
-    int resultado;
-    char msg_devolucao[50];
-} FEEDBACK;
-
-
 int sigint_received = 0;
 
 void handler_sigint(int s) {
     sigint_received = 1; 
+}
+void handler_sigterm(int s) {
+    sigint_received = 1; 
+}
+
+void handler_sigfpe(int s) {
+    sigint_received = 1;
 }
 
 int main(int argc, char *argv[]) {
@@ -52,26 +32,34 @@ int main(int argc, char *argv[]) {
       return 0;
    }
 
-   struct sigaction sa;
-   sa.sa_handler = handler_sigint; // Use simpler handler
-   sa.sa_flags = SA_RESTART;
-   sigaction(SIGINT, &sa, NULL);
+   struct sigaction sa_int, sa_term, sa_fpe;
+
+   //ctrl+c
+   sa_int.sa_handler = handler_sigint; 
+   sa_int.sa_flags = SA_RESTART;
+   sigaction(SIGINT, &sa_int, NULL);
+
+   //kill pid
+   sa_term.sa_handler = handler_sigterm;
+   sa_term.sa_flags = SA_RESTART;
+   sigaction(SIGTERM, &sa_term, NULL);
+
+   //kill -8 pid
+   sa_fpe.sa_handler = handler_sigfpe; 
+   sa_fpe.sa_flags = SA_RESTART;
+   sigaction(SIGFPE, &sa_fpe, NULL);
 
    fd_set read_fds;
    int nfd;
 
-
-   //---------------------------------
    IDENTIFICADOR id;
    id.tipo = 1;
    LOGIN login;
    login.pid = getpid();
    strcpy(login.username, argv[1]);
 
-   //FEEDBACK feedback;
    MSG msg;
    SUBSCRIBE sub;
-   //---------------------------------
 
    sprintf(CLIENT_FIFO_FINAL, CLIENT_FIFO, getpid());
    if (mkfifo(CLIENT_FIFO_FINAL, 0666) == -1) {
@@ -88,7 +76,6 @@ int main(int argc, char *argv[]) {
       return 1;
    }
 
-   //-------------------------------
    if (write(fd_envia, &id, sizeof(id)) == -1) {
       printf("Erro ao escrever no FIFO do servidor\n");
       close(fd_envia);
@@ -102,8 +89,6 @@ int main(int argc, char *argv[]) {
       unlink(CLIENT_FIFO_FINAL);
       return 2;
    }
-
-   //-------------------------------
 
 
    // CLIENTE ABRE O SEU NAMED PIPE PARA LEITURA
@@ -122,7 +107,7 @@ int main(int argc, char *argv[]) {
       nfd = select(fd_recebe + 1, &read_fds, NULL, NULL, NULL);
 
       if (sigint_received) {
-         // Handle SIGINT gracefully
+         printf("Sinal recebido!\n");
          int fd_envia = open(MANAGER_FIFO, O_WRONLY);
          if (fd_envia != -1) {
             id.tipo = 7; // Indicate shutdown
@@ -132,15 +117,14 @@ int main(int argc, char *argv[]) {
             if (write(fd_envia, &login, sizeof(login)) == -1) {
                printf("Erro ao escrever no FIFO do servidor\n");
             }
-            close(fd_recebe); 
             close(fd_envia);  
+            if (fd_recebe >= 0) close(fd_recebe);
             unlink(CLIENT_FIFO_FINAL);
-            printf("\nA encerrar cliente...\n");
+            printf("A encerrar cliente...\n");
             fflush(stdout);
             sleep(2);
             return 0;
-         }
-         
+         }  
       }
 
       if (FD_ISSET(0, &read_fds)) {
