@@ -160,7 +160,7 @@ int main(int argc, char *argv[]) {
          int size = read(fd_recebe, &contentor, sizeof(contentor));
          if (size > 0) {
             if (contentor.tipo == 1){
-               printf("\n%s", contentor.msg_devolucao); 
+               printf("%s", contentor.msg_devolucao); 
                if(contentor.resultado == 0){ //Nao deu para registar
                   close(fd_recebe); 
                   close(fd_envia);  
@@ -169,7 +169,7 @@ int main(int argc, char *argv[]) {
                }
             }
             else if (contentor.tipo == 2){
-               printf("\nNova mensagem! user:[%s] topico:[%s] msg:[%s]\n", contentor.username, contentor.topico, contentor.mensagem);
+               printf("\nNova mensagem! user:[%s] topico:[%s] msg:[%s]", contentor.username, contentor.topico, contentor.mensagem);
                if(contentor.resultado == 0){
                   close(fd_recebe); 
                   close(fd_envia);  
@@ -195,6 +195,7 @@ int main(int argc, char *argv[]) {
                write(fd_envia, &contentor, sizeof(contentor));
             }
          }
+         printf("\n");
       }
 
 

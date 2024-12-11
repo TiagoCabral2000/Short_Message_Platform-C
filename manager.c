@@ -729,6 +729,7 @@ void recuperaPersistentesFicheiro(ServerData* serverData) {
     char *nome_ficheiro = getenv("MSG_FICH");
     if (nome_ficheiro == NULL) {
         fprintf(stderr, "Erro: Variável de ambiente MSG_FICH não definida.\n");
+        kill(getpid(), SIGINT);
         return;
     }
 
