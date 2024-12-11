@@ -125,7 +125,7 @@ int main(int argc, char *argv[]) {
          // Handle SIGINT gracefully
          int fd_envia = open(MANAGER_FIFO, O_WRONLY);
          if (fd_envia != -1) {
-            id.tipo = 6; // Indicate shutdown
+            id.tipo = 10; // Indicate shutdown
             if (write(fd_envia, &id, sizeof(id)) == -1) {
                printf("Erro ao escrever no FIFO do servidor\n");
             }

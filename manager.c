@@ -91,11 +91,11 @@ typedef struct {
 ServerData *global_server_data = NULL; 
 
 void novoLogin(LOGIN* login, ServerData *serverdata);
-int analisaTopico(MSG* msg, Topico* topicos, int* numTopicos);
-void subscreveCliente(MSG* msg, IDENTIFICADOR* id, SUBSCRIBE* sub, Topico* topicos, ServerData* serverData);
-void guardaPersistentes(MSG* msg, ServerData* ServerData);
+int analisaTopico(MSG* msg, ServerData *serverdata);
+void subscreveCliente(MSG* msg, IDENTIFICADOR* id, SUBSCRIBE* sub, ServerData* serverData);
+int guardaPersistentes(MSG* msg, ServerData* ServerData);
 void distribuiMensagem(MSG* msg, ServerData* serverData);
-void apagaUsername(char username[20], ServerData* serverData, Topico* topicos);
+void apagaUsername(char username[20], ServerData* serverData, int flag);
 void unsubscribe(SUBSCRIBE* sub, ServerData* ServerData);
 
 void guardaPersistentesFicheiro(ServerData* serverData);
@@ -120,6 +120,7 @@ void* processaNamedPipes(void* aux) {
 
 	 int size;
     IDENTIFICADOR id;
+    int flag1 = 0, flag2 = 0;
 
     while (serverData->lock == 0) {
         size = read(serverData->fd, &id, sizeof(id));
@@ -137,12 +138,16 @@ void* processaNamedPipes(void* aux) {
                MSG msg;
                SUBSCRIBE sub = {0};
                read(serverData->fd, &msg, sizeof(msg));
-               int res;
-               res = analisaTopico(&msg, serverData->topicos, &serverData->numTopicos);
-               if (res == 0){
-                  guardaPersistentes(&msg, serverData);
-                  subscreveCliente(&msg, &id, &sub, serverData->topicos, serverData);
-                  distribuiMensagem(&msg, serverData);
+               flag1 = analisaTopico(&msg, serverData);
+               printf("\nFLAG 1 == %d\n", flag1);
+               if (flag1 == 0){
+                  flag2 = guardaPersistentes(&msg, serverData);
+                  printf("\nFLAG 2 == %d\n", flag2);
+                  if (flag2 == 0){
+                     printf("\nENTROU AQUI\n");
+                     subscreveCliente(&msg, &id, &sub, serverData);
+                     distribuiMensagem(&msg, serverData);
+                  }
                }
                break;
             } 
@@ -157,7 +162,7 @@ void* processaNamedPipes(void* aux) {
                MSG msg = {0};
                SUBSCRIBE sub;
                read(serverData->fd, &sub, sizeof(sub));
-            	subscreveCliente(&msg, &id, &sub, serverData->topicos, serverData);
+            	subscreveCliente(&msg, &id, &sub, serverData);
                break;
             }
             case 5:{
@@ -169,8 +174,15 @@ void* processaNamedPipes(void* aux) {
             case 6: {
                LOGIN login;
                read(serverData->fd, &login, sizeof(login));
-               apagaUsername(login.username, serverData, serverData->topicos);
+               int flag = 0;
+               apagaUsername(login.username, serverData, flag);
 				}
+            case 10: {
+               LOGIN login;
+               read(serverData->fd, &login, sizeof(login));
+               int flag = 1;
+               apagaUsername(login.username, serverData, flag);
+            }
 				default:
 					printf("\nTipo n existe");
 			}
@@ -209,6 +221,26 @@ void* descontaTempo(void *aux){
    }
 }
 
+void* gereTopicos(void* aux) {
+    ServerData* serverData = (ServerData*)aux;
+    int i, j;
+    while (serverData->lock == 0){
+      if (serverData->numTopicos > 0){
+         sleep(10);
+         for (i = 0; i < serverData->numTopicos; i++) {
+            if (serverData->topicos[i].numClientes == 0 && serverData->topicos->numPersistentes == 0){
+               pthread_mutex_lock(serverData->m);
+               for (int j = 0; j < serverData->numTopicos; j++){
+                  serverData->topicos[j] = serverData->topicos[j+1];
+               }
+               serverData->numTopicos--;
+               pthread_mutex_unlock(serverData->m);
+            }
+         }
+      }
+    }
+}
+
 
 int main() {
     pthread_mutex_t mutex; 
@@ -216,7 +248,7 @@ int main() {
     ServerData serverData = {0};
     serverData.lock = 0;
     serverData.m = &mutex;
-    pthread_t thr_pipes, thr_tempo, thr_alive;
+    pthread_t thr_pipes, thr_tempo, thr_gestaoTopicos;
 
     for (int i = 0; i < MAX_TOPICOS; i++) {
       for (int j = 0; j < 5; j++) {
@@ -255,11 +287,11 @@ int main() {
         perror("Erro ao criar thread");
         return 1;
     }
-    /*
-    if (pthread_create(&thr_alive, NULL, verificaClientes, &serverData) != 0) {
+    
+    if (pthread_create(&thr_gestaoTopicos, NULL, gereTopicos, &serverData) != 0) {
         perror("Erro ao criar thread");
         return 1;
-    }*/
+    }
 
     char buffer[50];
     char username[20];
@@ -271,7 +303,8 @@ int main() {
             buffer[strcspn(buffer, "\n")] = 0;
 
             if (sscanf(buffer, "remove %19s", username) == 1) {
-               apagaUsername(username, &serverData, serverData.topicos);
+               int flag = 0;
+               apagaUsername(username, &serverData, flag);
             } 
             else if (strcmp(buffer, "topics") == 0) {
                char nome[20] = "\0";
@@ -392,39 +425,42 @@ void novoLogin(LOGIN* login, ServerData *serverData) {
 }
 
 
-int analisaTopico(MSG* msg, Topico* topicos, int* numTopicos) {
+int analisaTopico(MSG* msg, ServerData *serverdata) {
     int topic_exists = 0;
-    int index;
+    int index = -1;
     int free_slot = -1;
-    int res = 0;
+    int res = -1;
     int envia_msg = 0;
     FEEDBACK feedback;
     IDENTIFICADOR id;
 
     // Procura pelo tópico ou um slot livre
     for (int i = 0; i < 20; i++){
-        if (strcmp(topicos[i].nome_topico, msg->topico) == 0) {
+        if (strcmp(serverdata->topicos[i].nome_topico, msg->topico) == 0) {
             topic_exists = 1;
+            res = 0;
             index = i;
             break;
         }
-        if (topicos[i].nome_topico[0] == '\0' && free_slot == -1) 
+        if (strcmp(serverdata->topicos[i].nome_topico, "\0") == 0 && free_slot == -1) {
             free_slot = i; 
+         }
     }
 
     if (topic_exists == 1){
-      if(topicos[index].bloqueado == 1){
+      if(serverdata->topicos[index].bloqueado == 1){
          strcpy(feedback.msg_devolucao, "Topico bloqueado pelo administrador!\n");
          envia_msg = 1;
          res = 1;
       }
     } 
     else if (free_slot != -1){ //Ha espaço para criar um novo topico
-      strcpy(topicos[free_slot].nome_topico, msg->topico);
-      topicos[free_slot].pid_clientes[0] = msg->pid;
-      topicos[free_slot].numClientes = 1;
-      topicos[free_slot].bloqueado = 0;
-      (*numTopicos)++;  
+      strcpy(serverdata->topicos[free_slot].nome_topico, msg->topico);
+      serverdata->topicos[free_slot].pid_clientes[0] = msg->pid;
+      serverdata->topicos[free_slot].numClientes = 1;
+      serverdata->topicos[free_slot].bloqueado = 0;
+      (serverdata->numTopicos)++; 
+      res = 0; 
     } 
     else{
       strcpy(feedback.msg_devolucao, "Capacidade máxima de tópicos atingida");
@@ -449,94 +485,96 @@ int analisaTopico(MSG* msg, Topico* topicos, int* numTopicos) {
     return res;
 }
 
-void subscreveCliente(MSG* msg, IDENTIFICADOR* id, SUBSCRIBE* sub, Topico* topicos, ServerData* serverData) {
-   int found = 0; 
-   int alreadySubscribed = 0; 
+void subscreveCliente(MSG* msg, IDENTIFICADOR* id, SUBSCRIBE* sub, ServerData* serverData) {
+   int found = -1; 
+   int alreadySubscribed = -1; 
    int fd_envia;
-   int index;
-   int PID;
+   int index = -1;
+   int PID = -1;
    char utilizador[20];
+   int envia_feedback = 0;
+   int nova_subscricao = 0;
    FEEDBACK feedback;
 
-   //if para sub e outro if para msg???
    if (id->tipo == 2){
       PID = msg->pid;
       strcpy(utilizador, msg->username);
       for (int i = 0; i < 20; i++) {
       // Verifica se o tópico corresponde
-         if (strcmp(topicos[i].nome_topico, msg->topico) == 0) {
+         if (strcmp(serverData->topicos[i].nome_topico, msg->topico) == 0) {
             found = 1; 
             index = i;
 
             // Verifica se o cliente já está inscrito
-            for (int j = 0; j < topicos[i].numClientes; j++) {
-               if (topicos[i].pid_clientes[j] == msg->pid) {
+            for (int j = 0; j < serverData->topicos[i].numClientes; j++) {
+               if (serverData->topicos[i].pid_clientes[j] == msg->pid) {
+                  alreadySubscribed = 1; 
+                  break;
+               }
+            }
+            if (alreadySubscribed == -1) {
+               if (serverData->topicos[index].numClientes < 10) {
+                  serverData->topicos[index].pid_clientes[serverData->topicos[index].numClientes] = msg->pid;
+                  serverData->topicos[index].numClientes++;
+                  strcpy(feedback.msg_devolucao, "Subscrito com sucesso!");
+                  envia_feedback = 1;
+                  nova_subscricao = 1;
+               }
+               else {
+                  strcpy(feedback.msg_devolucao, "Máximo de clientes atingido para este tópico");
+                  envia_feedback = 1;
+               }
+            }
+            break;
+         }
+      }
+   }
+
+   else if(id->tipo == 4){
+      PID = sub->pid;
+      strcpy(utilizador, sub->username);
+      for (int i = 0; i < 20; i++) {
+   
+         if (strcmp(serverData->topicos[i].nome_topico, sub->topico) == 0) {
+            found = 1; 
+            index = i;
+
+            for (int j = 0; j < serverData->topicos[i].numClientes; j++) {
+               if (serverData->topicos[i].pid_clientes[j] == sub->pid) {
                   alreadySubscribed = 1; 
                   break;
                }
             }
             if (alreadySubscribed == 1) {
                strcpy(feedback.msg_devolucao, "Já inscrito!");
+               envia_feedback = 1;
                break;
             } 
             else{
-               if (topicos[index].numClientes < 10) {
-                  // Adiciona o cliente, se possível
-                  topicos[index].pid_clientes[topicos[index].numClientes] = msg->pid;
-                  topicos[index].numClientes++;
+               if (serverData->topicos[index].numClientes < 10) {
+                  serverData->topicos[index].pid_clientes[serverData->topicos[index].numClientes] = sub->pid;
+                  serverData->topicos[index].numClientes++;
                   strcpy(feedback.msg_devolucao, "Subscrito com sucesso!");
+                  envia_feedback = 1;
+                  nova_subscricao = 1;
                }
                else {
                   strcpy(feedback.msg_devolucao, "Máximo de clientes atingido para este tópico");
+                  envia_feedback = 1;
                }
             }
          }
       }
-   }
-
-   else{
-      PID = sub->pid;
-      strcpy(utilizador, sub->username);
-      for (int i = 0; i < 20; i++) {
-      // Verifica se o tópico corresponde
-      if (strcmp(topicos[i].nome_topico, sub->topico) == 0) {
-         found = 1; 
-         index = i;
-
-         // Verifica se o cliente já está inscrito
-         for (int j = 0; j < topicos[i].numClientes; j++) {
-            if (topicos[i].pid_clientes[j] == sub->pid) {
-               alreadySubscribed = 1; 
-               break;
-            }
-         }
-         if (alreadySubscribed == 1) {
-            strcpy(feedback.msg_devolucao, "Já inscrito!");
-            break;
-         } 
-         else{
-            if (topicos[index].numClientes < 10) {
-               // Adiciona o cliente, se possível
-               topicos[index].pid_clientes[topicos[index].numClientes] = sub->pid;
-               topicos[index].numClientes++;
-               strcpy(feedback.msg_devolucao, "Subscrito com sucesso!");
-            }
-            else {
-               strcpy(feedback.msg_devolucao, "Máximo de clientes atingido para este tópico");
-            }
-         }
-      }
-   }
-
    }
 
    if (found == 0){
       strcpy(feedback.msg_devolucao, "Topico nao encontrado");
+      envia_feedback = 1;
    }
 
-   if (id->tipo == 4){ //Se o comando foi subscribe
+   if (envia_feedback == 1){ //Se o comando foi subscribe
       sprintf(CLIENT_FIFO_FINAL, CLIENT_FIFO, PID);
-
+      id->tipo = 4;
       fd_envia = open(CLIENT_FIFO_FINAL, O_WRONLY);
       if (fd_envia != -1) {
          write(fd_envia, id, sizeof(*id)); 
@@ -548,70 +586,99 @@ void subscreveCliente(MSG* msg, IDENTIFICADOR* id, SUBSCRIBE* sub, Topico* topic
       }
    } 
 
+   if (nova_subscricao == 1){
+      if (serverData->topicos[index].numPersistentes > 0){
+         for (int j = 0; j < serverData->topicos[index].numPersistentes; j++){
+            id->tipo = 2;
+            strcpy(msg->mensagem, serverData->topicos[index].msg_persistentes[j]);
+            strcpy(msg->topico, serverData->topicos[index].nome_topico);
+            strcpy(msg->username, serverData->topicos[index].usernames[j]);
 
-   if (topicos[index].numPersistentes > 0){
-      for (int j = 0; j < topicos[index].numPersistentes; j++){
-         id->tipo = 2;
-         strcpy(msg->mensagem, topicos[index].msg_persistentes[j]);
-         strcpy(msg->topico, topicos[index].nome_topico);
-         strcpy(msg->username, topicos[index].usernames[j]);
-
-         if(strcmp(msg->username, utilizador) == 0)
-            continue;
-         else{
-                  sprintf(CLIENT_FIFO_FINAL, CLIENT_FIFO, PID);
-                  fd_envia = open(CLIENT_FIFO_FINAL, O_WRONLY);
-                  if (fd_envia != -1) {
-                     write(fd_envia, id, sizeof(*id));
-                     write(fd_envia, msg, sizeof(*msg)); 
-                     close(fd_envia);
-                  }
-                  else {
-                     printf("Erro ao abrir FIFO para cliente %d\n", PID);
-                  } 
-         }    
+             if(strcmp(msg->username, utilizador) == 0) //Nao recebe a propria mensagem duplicada
+                continue;
+             else{
+                     sprintf(CLIENT_FIFO_FINAL, CLIENT_FIFO, PID);
+                     fd_envia = open(CLIENT_FIFO_FINAL, O_WRONLY);
+                     if (fd_envia != -1) {
+                        write(fd_envia, id, sizeof(*id));
+                        write(fd_envia, msg, sizeof(*msg)); 
+                        close(fd_envia);
+                     }
+                     else {
+                        printf("Erro ao abrir FIFO para cliente %d\n", PID);
+                     } 
+            }    
+         }
       }
    } 
    
-   }
+}
 
 
-void guardaPersistentes(MSG* msg, ServerData* ServerData){
+int guardaPersistentes(MSG* msg, ServerData* ServerData){
     int free_slot = -1;
     int index = -1;
+    int envia_feedback = 0;
+    int res = 0;
+    FEEDBACK feedback;
+    IDENTIFICADOR id;
 
     if (msg->duracao > 0) {
         // Percorrer os tópicos
         for (int i = 0; i < ServerData->numTopicos; i++) {
-            if (ServerData->topicos[i].numPersistentes < 5) {
-                if (strcmp(ServerData->topicos[i].nome_topico, msg->topico) == 0) {
-                    index = i;
+            if (strcmp(ServerData->topicos[i].nome_topico, msg->topico) == 0) {
+               index = i;
+               res = 0;
+               if (ServerData->topicos[index].numPersistentes == 5) {
+                  envia_feedback = 1;
+                  res = 1;
+                  break;
+               }
+               else{
                     // Encontrar slot livre
                     for (int j = 0; j < 5; j++) {
-                        if (ServerData->topicos[i].msg_persistentes[j][0] == '\0') {
+                        if (strcmp(ServerData->topicos[i].msg_persistentes[j], "\0") == 0) {
                             free_slot = j;
+                            res = 0;
                             break;
                         }
                     }
-                    break;
-                }
+               }
+               break;
+            }  
+        }
+
+        if (index == -1 || free_slot == -1) {
+            res = 1;
+        }
+        else{
+            res = 0;
+            pthread_mutex_lock(ServerData->m);
+            strcpy(ServerData->topicos[index].msg_persistentes[free_slot], msg->mensagem);
+            strcpy(ServerData->topicos[index].usernames[free_slot], msg->username);
+            ServerData->topicos[index].tempo[free_slot] = msg->duracao;
+            ServerData->topicos[index].numPersistentes++;
+            pthread_mutex_unlock(ServerData->m);
+        }
+    } 
+
+    if (envia_feedback == 1){
+      id.tipo = 4;
+      strcpy(feedback.msg_devolucao, "Limite de mensagens persistentes atingido!");
+      sprintf(CLIENT_FIFO_FINAL, CLIENT_FIFO, msg->pid);
+
+      int fd_envia = open(CLIENT_FIFO_FINAL, O_WRONLY);
+
+            if (fd_envia != -1) {
+               write(fd_envia, &id, sizeof(id));
+               write(fd_envia, &feedback, sizeof(feedback)); // Envia a mensagem
+               close(fd_envia);
+            } else {
+               printf("Erro ao abrir FIFO para cliente %d\n", msg->pid);
             }
-        }
 
-        if (free_slot == -1 || index == -1) {
-            printf("\nSEM ESPACO PARA MSG PERSISTENTE OU TOPICO NAO ENCONTRADO!");
-            return;
-        }
-
-        pthread_mutex_lock(ServerData->m);
-        strcpy(ServerData->topicos[index].msg_persistentes[free_slot], msg->mensagem);
-        strcpy(ServerData->topicos[index].usernames[free_slot], msg->username);
-        ServerData->topicos[index].tempo[free_slot] = msg->duracao;
-        ServerData->topicos[index].numPersistentes++;
-        pthread_mutex_unlock(ServerData->m);
-    } else {
-        printf("\nDURACAO INVALIDA!");
     }
+    return res;
 }
 
 
@@ -640,7 +707,7 @@ void distribuiMensagem(MSG* msg, ServerData* serverData) {
    }
 }
 
-void apagaUsername(char username[20], ServerData* serverData, Topico* topicos) {
+void apagaUsername(char username[20], ServerData* serverData, int flag) {
    int pid = -1;
 	int index;
 	int fd_envia;
@@ -658,7 +725,22 @@ void apagaUsername(char username[20], ServerData* serverData, Topico* topicos) {
             strcpy(serverData->usernames[index],"\0");
             serverData->pids[index] = 0;
 
-            
+            if (flag == 0){ //so se tiver a terminar ordeiramente
+               id.tipo = 7;
+               sprintf(CLIENT_FIFO_FINAL, CLIENT_FIFO, pid);
+               printf("\n%s\n",CLIENT_FIFO_FINAL);
+               fd_envia = open(CLIENT_FIFO_FINAL, O_WRONLY);
+               if (fd_envia != -1) {
+                  if (write(fd_envia, &id, sizeof(id)) == -1) {
+                     printf("Falha a escrever ao cliente");
+                  }
+                  close(fd_envia); 
+               }
+               else {
+                  printf("Falha a abrir o pipe para escrita");
+               }
+            }
+
             for (int j = index; j < 9; j++) {
                 strcpy(serverData->usernames[j], serverData->usernames[j + 1]);
                 serverData->pids[j] = serverData->pids[j + 1];
@@ -671,33 +753,17 @@ void apagaUsername(char username[20], ServerData* serverData, Topico* topicos) {
     }
 
     for (int i = 0; i < MAX_TOPICOS; i++) {
-        for (int j = 0; j < topicos[i].numClientes; j++) {
-            if (topicos[i].pid_clientes[j] == pid) {
-                for (int k = j; k < topicos[i].numClientes - 1; k++) {
-                    topicos[i].pid_clientes[k] = topicos[i].pid_clientes[k + 1];
+        for (int j = 0; j < serverData->topicos[i].numClientes; j++) {
+            if (serverData->topicos[i].pid_clientes[j] == pid) {
+                for (int k = j; k < serverData->topicos[i].numClientes - 1; k++) {
+                    serverData->topicos[i].pid_clientes[k] = serverData->topicos[i].pid_clientes[k + 1];
                 }
-                topicos[i].numClientes--;
+                serverData->topicos[i].numClientes--;
                 break;
             }
         }
     }
-
-    id.tipo = 7;
-    sprintf(CLIENT_FIFO_FINAL, CLIENT_FIFO, pid);
-    fd_envia = open(CLIENT_FIFO_FINAL, O_WRONLY);
-   if (fd_envia != -1) {
-      if (write(fd_envia, &id, sizeof(id)) == -1) {
-         printf("Falha a escrever ao cliente");
-      }
-      close(fd_envia); 
-   }
-   else {
-      printf("Falha a abrir o pipe para escrita");
-   }
   
-
-
-   
     for (int i = 0; i < serverData->numCli; i++) {
         if (serverData->pids[i] > 0) {
          id.tipo = 4;
