@@ -15,19 +15,19 @@
 char CLIENT_FIFO_FINAL[100];
 
 typedef struct {
-    char nome_topico[20];
-    int pid_clientes[10];
-    int numClientes;
-	 char msg_persistentes[5][300];
-	 int tempo[5];
-    char usernames[5][20];
-	 int numPersistentes;
-    int bloqueado;
+   char nome_topico[20];
+   int pid_clientes[10];
+   int numClientes;
+	char msg_persistentes[5][300];
+	int tempo[5];
+   char usernames[5][20];
+	int numPersistentes;
+   int bloqueado;
 } Topico;
+
 
 #define MAX_TOPICOS 20
 #define MAX_CLIENTES 10
-
 typedef struct {
    Topico topicos[MAX_TOPICOS];
    int numTopicos;
