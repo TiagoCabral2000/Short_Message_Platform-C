@@ -248,7 +248,7 @@ int main() {
             // Remove o '\n' do final da string se houver
             buffer[strcspn(buffer, "\n")] = 0;
 
-            if (sscanf(buffer, "remove %19s", username) == 1) {
+            if (sscanf(buffer, "remove %19[^\n]", username) == 1) { //%19[^\n] - remove mais q 1 nome
                int flag = 0;
                apagaUsername(username, &serverData, flag);
             } 
@@ -834,7 +834,7 @@ void guardaPersistentesFicheiro(ServerData* serverData) {
       }    
     }
     fclose(f);
-    printf("Mensagens persistentes guardadas em %s.\n", nome_ficheiro);
+    printf("Mensagens persistentes guardadas em %s\n", nome_ficheiro);
 }
 
 void recuperaPersistentesFicheiro(ServerData* serverData) {
@@ -842,13 +842,12 @@ void recuperaPersistentesFicheiro(ServerData* serverData) {
     if (nome_ficheiro == NULL) {
         fprintf(stderr, "Erro: Variável de ambiente MSG_FICH não definida.\n");
         kill(getpid(), SIGINT);
-        return;
     }
 
     FILE *f = fopen(nome_ficheiro, "r");
     if (f == NULL) {
         perror("Erro ao abrir o ficheiro para leitura");
-        return;
+        kill(getpid(), SIGINT);
     }
 
     char linha[350];
@@ -910,43 +909,51 @@ void recuperaPersistentesFicheiro(ServerData* serverData) {
     }
 
     fclose(f);
-    printf("Mensagens persistentes recuperadas de %s.\n", nome_ficheiro);
+    printf("Mensagens persistentes recuperadas de %s\n", nome_ficheiro);
 }
 
 void mostraTopicos(ServerData* serverData, char nomeTopico[20]){
+   int found = 0;
    if (strcmp(nomeTopico, "\0") == 0){
-      printf("\n------------------- TOPICOS ------------------- \n");
-      for (int i = 0; i < serverData->numTopicos; i++) {
-         printf("Topico %d - '%s'\nClientes subscritos: %d -> ", i, serverData->topicos[i].nome_topico, serverData->topicos[i].numClientes);
-         for (int j = 0; j < serverData->topicos[i].numClientes; j++) {
-            printf("[%d] ", serverData->topicos[i].pid_clientes[j]);
+      if (serverData->numTopicos == 0) { printf("\nNão existem tópicos registados!\n"); }
+      else{
+         printf("\n------------------- TOPICOS ------------------- \n");
+         for (int i = 0; i < serverData->numTopicos; i++) {
+            printf("Topico %d - '%s'\nClientes subscritos: %d -> ", i, serverData->topicos[i].nome_topico, serverData->topicos[i].numClientes);
+            for (int j = 0; j < serverData->topicos[i].numClientes; j++) {
+               printf("[%d] ", serverData->topicos[i].pid_clientes[j]);
+            }
+            if (serverData->topicos[i].bloqueado == 0){printf("\nEstado: desbloquado");}
+            else{printf("\nEstado: bloqueado");}
+            printf("\nNumero de msg persistentes no topico = %d\n", serverData->topicos[i].numPersistentes);
+            for (int k = 0; k <5; k++){
+               printf("msg %d: {%s}, username {%s}, tempo = {%d}\n", k+1,serverData->topicos[i].msg_persistentes[k], serverData->topicos[i].usernames[k], serverData->topicos[i].tempo[k]);
+            }
+            printf("\n");
          }
-         if (serverData->topicos[i].bloqueado == 0){printf("\nEstado: desbloquado");}
-         else{printf("\nEstado: bloqueado");}
-         printf("\nNumero de msg persistentes no topico = %d\n", serverData->topicos[i].numPersistentes);
-         for (int k = 0; k <5; k++){
-            printf("msg %d: {%s}, username {%s}, tempo = {%d}\n", k+1,serverData->topicos[i].msg_persistentes[k], serverData->topicos[i].usernames[k], serverData->topicos[i].tempo[k]);
-         }
-         printf("\n");
-      }
-      printf("-----------------------------------------------\n");
+         printf("-----------------------------------------------\n");
+      }  
    }
    else{
       for (int i = 0; i < serverData->numTopicos; i++) {
          if (strcmp(serverData->topicos[i].nome_topico, nomeTopico) == 0){
+            found = 1;
             printf ("\nTOPICO %s:\nClientes subscritos: %d -> ", serverData->topicos[i].nome_topico, serverData->topicos[i].numClientes);
             for (int j = 0; j < serverData->topicos[i].numClientes; j++) {
-            printf("[%d] ", serverData->topicos[i].pid_clientes[j]);
-         }
-         if (serverData->topicos[i].bloqueado == 0){printf("\nEstado: desbloquado");}
-         else{printf("\nEstado: bloqueado");}
-         printf("\nNumero de msg persistentes no topico = %d\n", serverData->topicos[i].numPersistentes);
-         for (int k = 0; k <5; k++){
-            printf("msg %d: {%s}, username {%s}, tempo = {%d}\n", k+1,serverData->topicos[i].msg_persistentes[k], serverData->topicos[i].usernames[k], serverData->topicos[i].tempo[k]);
-         }
+               printf("[%d] ", serverData->topicos[i].pid_clientes[j]);
+            }
+            if (serverData->topicos[i].bloqueado == 0){printf("\nEstado: desbloquado");}
+            else{printf("\nEstado: bloqueado");}
+            printf("\nNumero de msg persistentes no topico = %d\n", serverData->topicos[i].numPersistentes);
+            for (int k = 0; k <5; k++){
+               printf("msg %d: {%s}, username {%s}, tempo = {%d}\n", k+1,serverData->topicos[i].msg_persistentes[k], serverData->topicos[i].usernames[k], serverData->topicos[i].tempo[k]);
+            }
+            break;
          }
       }
-
+      if (found == 0){
+         printf("\nTopico nao encontrado!\n");
+      }
    }
 }
 
