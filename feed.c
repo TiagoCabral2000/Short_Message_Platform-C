@@ -99,7 +99,6 @@ int main(int argc, char *argv[]) {
    }
 
    int flag = 0;
-
    do {
       FD_ZERO(&read_fds);
       FD_SET(0, &read_fds);

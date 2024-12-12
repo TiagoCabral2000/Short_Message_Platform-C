@@ -62,10 +62,3 @@ Persistent messages with remaining time are saved to a text file when the manage
 - close -> Shuts down the platform and terminates the manager, notifying all feed processes to close and releasing system resources.
 
 
-## TO-DO
-- 10 user limit array
-- feed cycle to ask for new messages (manager named pipe - write) - after i need to wait for 'msg' keyword
-- manager cycle to receive new messages (manager named pipe - read)
-- save topics and user pid's: -bidimensional array for topics and users?
-- resend message to users registred in topic (multiple named pipes - server to multiple clients) - maybe just regist all client pid's in one array and send it for all first
-- ... estrutura para cada comando?
