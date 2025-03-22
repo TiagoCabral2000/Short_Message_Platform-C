@@ -1,5 +1,6 @@
 # TP_SO_2425
 Platform for sending and receiving short messages, organized by topics <br />
+A project developed within the scope of the Operating Systems course <br />
 Final grade: 19/20
 <br />
 
